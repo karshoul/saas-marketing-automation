@@ -1,0 +1,11 @@
+# Hoàn toàn bỏ qua node_modules của cả 2 bên
+**/node_modules/
+node_modules/
+
+# Bỏ qua các file cấu hình môi trường bí mật chứa mật khẩu DB
+.env
+**/.env
+
+# Bỏ qua log lỗi hệ thống
+*.log
+**/_logs/

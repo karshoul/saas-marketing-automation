@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* 🛠️ Cấu hình Font chữ trực tiếp cho Tailwind v4 */
+@theme {
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'Space Grotesk', monospace;
+}
+
+/* Giữ nguyên hiệu ứng dòng chữ chạy ngang cũ */
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-\[marquee_25s_linear_infinite\] {
+  animation: marquee 25s linear infinite;
+}
