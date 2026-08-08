@@ -1,0 +1,4 @@
+export const AUDIT_STATUS = {
+  SUCCESS: 'SUCCESS',
+  FAILED: 'FAILED'
+};

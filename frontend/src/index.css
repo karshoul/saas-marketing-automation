@@ -1,17 +1,69 @@
 @import "tailwindcss";
 
-/* 🛠️ Cấu hình Font chữ trực tiếp cho Tailwind v4 */
+/* Định nghĩa Font chữ cho Tailwind v4 */
 @theme {
   --font-sans: 'Inter', sans-serif;
   --font-mono: 'Space Grotesk', monospace;
 }
 
-/* Giữ nguyên hiệu ứng dòng chữ chạy ngang cũ */
+/* Hiệu ứng quầng sáng trôi nổi ở nền sau - Đã tối ưu hóa thuật toán ma trận */
+@keyframes aurora-float {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.95); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+@keyframes aurora-float-reverse {
+  0% { transform: translate(0px, 0px) scale(1); }
+  50% { transform: translate(-40px, 40px) scale(1.05); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+.animate-aurora-1 {
+  animation: aurora-float 15s infinite ease-in-out;
+}
+
+.animate-aurora-2 {
+  animation: aurora-float-reverse 18s infinite ease-in-out;
+}
+
+/* Hiệu ứng Text Marquee chạy ngang */
 @keyframes marquee {
   0% { transform: translateX(0%); }
   100% { transform: translateX(-50%); }
 }
 
-.animate-\[marquee_25s_linear_infinite\] {
-  animation: marquee 25s linear infinite;
+.animate-marquee {
+  animation: marquee 30s linear infinite;
+}
+
+/* 🛠️ Triệt tiêu thanh cuộn thô thiển của hệ thống Windows nhưng vẫn giữ tính năng cuộn bằng chuột */
+.scrollbar-none::-webkit-scrollbar {
+  display: none; /* Safari and Chrome */
+}
+.scrollbar-none {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Tùy biến thanh cuộn mỏng nhẹ, tinh tế ĐÃ CHUYỂN SANG MÀU EMERALD/MINT VERDIO */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #060907;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 99px;
+  border: 1px solid rgba(52, 211, 153, 0.05);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(52, 211, 153, 0.3);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.2);
 }
