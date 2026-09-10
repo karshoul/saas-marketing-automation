@@ -1,3 +1,5 @@
+import Plan from '../models/Plan.js';
+
 export const SUBSCRIPTION_PLANS = {
   FREE: {
     code: 'FREE',
@@ -25,5 +27,24 @@ export const SUBSCRIPTION_PLANS = {
     maxEmailsPerMonth: 500000,
     maxWorkers: 20,
     features: ['all']
+  }
+};
+
+/**
+ * Hàm tự động nạp dữ liệu các gói cước vào Database nếu chưa tồn tại
+ */
+export const seedPlans = async () => {
+  try {
+    const plansToInsert = Object.values(SUBSCRIPTION_PLANS);
+    for (const plan of plansToInsert) {
+      await Plan.findOneAndUpdate(
+        { code: plan.code },
+        { $set: plan },
+        { upsert: true, new: true }
+      );
+    }
+    console.log('✅ [Auto-Seed]: Đã đồng bộ các gói cước FREE / PRO / ENTERPRISE vào MongoDB thành công!');
+  } catch (error) {
+    console.error('❌ [Auto-Seed Error]: Lỗi khi đồng bộ gói cước:', error.message);
   }
 };

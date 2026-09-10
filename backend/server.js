@@ -7,7 +7,7 @@ import { env } from './src/config/env.js';
 import { connectDB } from './src/config/database.js';
 import { redis } from './src/config/redis.js';
 import Plan from './src/models/Plan.js';
-import { SUBSCRIPTION_PLANS } from './src/config/plans.config.js';
+import { seedPlans } from './src/config/plans.config.js';
 // 2. Import Worker & Queue Engine
 import { initEmailWorker } from './src/queues/email.queue.js';
 import workerScaler from './src/schedulers/worker.scaler.js';
@@ -110,7 +110,7 @@ const startServer = async () => {
     const planCount = await Plan.countDocuments();
     if (planCount === 0) {
     console.log('🌱 [Auto-Seed]: Chưa có dữ liệu Plan, tiến hành tự động khởi tạo gói FREE/PRO/ENTERPRISE...');
-    await SUBSCRIPTION_PLANS(false);
+    await seedPlans();
     }   
 
     // 2. Khởi tạo BullMQ Email Worker (Bắt đầu với mức tối thiểu 2 concurrency)
