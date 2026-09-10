@@ -1,43 +1,30 @@
 import { Router } from 'express';
 
-// Controllers
+// Controller
 import tenantController from '../controllers/tenant.controller.js';
 
-// Middlewares
-import { authenticateUser } from '../middlewares/auth.middleware.js';
-import { authorizeRoles } from '../middlewares/role.middleware.js';
-import { validateDto } from '../middlewares/validate.middleware.js';
-
-// Validators
-import { createTenantValidator } from '../validators/tenant.validator.js';
-
-// Constants
-import { ROLES } from '../constants/auth/roles.js';
+// Sửa 'middlewares' thành 'middleware' (bỏ chữ s)
+import { authenticateUser } from '../middleware/auth.middleware.js';
+import { authorizeRoles } from '../middleware/rbac.middleware.js';
 
 const router = Router();
 
-// Toàn bộ các API thuộc Tenant Domain bắt buộc phải đi qua lớp Kiểm tra Access Token
+// Áp dụng middleware xác thực
 router.use(authenticateUser);
 
 /**
  * @route   GET /api/tenants/me
  * @desc    Lấy thông tin chi tiết Workspace của Tenant hiện tại
- * @access  Private (Mọi nhân viên thuộc Tenant đều xem được)
  */
-router.get(
-  '/me',
-  tenantController.getMyTenant
-);
+router.get('/me', tenantController.getMyTenant);
 
 /**
  * @route   PUT /api/tenants/me
- * @desc    Cập nhật thông tin cấu hình Workspace (Tên, cấu hình)
- * @access  Private (Chỉ OWNER và ADMIN mới có quyền chỉnh sửa)
+ * @desc    Cập nhật thông tin cấu hình Workspace
  */
 router.put(
   '/me',
-  authorizeRoles(ROLES.OWNER, ROLES.ADMIN),
-  validateDto(createTenantValidator),
+  authorizeRoles('OWNER', 'ADMIN'),
   tenantController.updateMyTenant
 );
 

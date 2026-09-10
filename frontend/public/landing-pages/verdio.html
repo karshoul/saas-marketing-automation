@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VERDIO — Autonomous Adaptive Queue Engine</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23020617'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%236366f1'/%3E%3Cpath d='M8 12h16M11 16h10M14 20h4' stroke='%2338bdf8' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #020617;
+  --panel: rgba(15, 23, 42, 0.72);
+  --primary: #6366f1;
+  --accent: #38bdf8;
+  --emerald: #10b981;
+  --violet: #a855f7;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-bright: rgba(56, 189, 248, 0.45);
+  --pad: clamp(24px, 5vw, 120px);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+  line-height: 1.6;
+}
+
+#gl {
+  position: fixed; inset: 0; width: 100vw; height: 100vh;
+  z-index: 0; pointer-events: none;
+}
+
+#vignette {
+  position: fixed; inset: 0; z-index: 55; pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 50%, transparent 40%, rgba(2, 6, 23, 0.85) 100%);
+}
+
+.page { position: relative; z-index: 10; }
+
+/* Navigation Dock */
+.nav {
+  position: fixed; top: 0; left: 0; width: 100%; height: 80px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--pad); z-index: 50;
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  background: rgba(2, 6, 23, 0.75);
+}
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: 1.5px; text-decoration: none; color: #fff; font-size: 18px; }
+.brand span { color: var(--accent); }
+.nav-links { display: flex; gap: 32px; list-style: none; }
+.nav-links a { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 500; letter-spacing: 0.5px; transition: 0.3s; }
+.nav-links a:hover { color: #fff; }
+
+/* Integrated Auth Button Group */
+.nav-auth { display: flex; align-items: center; gap: 12px; }
+.nav-login {
+  color: var(--text-muted); text-decoration: none;
+  padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 500;
+  transition: all 0.25s var(--ease);
+}
+.nav-login:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+
+.nav-register {
+  background: linear-gradient(135deg, var(--primary), var(--violet));
+  color: #fff; text-decoration: none;
+  padding: 8px 20px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  letter-spacing: 0.3px; transition: all 0.25s var(--ease);
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.35);
+}
+.nav-register:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 30px rgba(99, 102, 241, 0.6);
+}
+
+/* Section Layout */
+.sec {
+  min-height: 100vh;
+  padding: 160px var(--pad) 100px;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.tag {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 20px;
+  background: rgba(56, 189, 248, 0.1);
+  padding: 6px 14px; border-radius: 100px;
+  border: 1px solid rgba(56, 189, 248, 0.2); width: fit-content;
+}
+.h-xl { font-size: clamp(40px, 5.5vw, 76px); font-weight: 800; line-height: 1.08; margin-bottom: 24px; letter-spacing: -2px; }
+.desc { max-width: 600px; font-size: clamp(16px, 1.2vw, 19px); color: var(--text-muted); margin-bottom: 40px; }
+
+/* Bento Cards */
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; margin-top: 30px; }
+.hud-card {
+  background: var(--panel); border: 1px solid var(--border);
+  padding: 36px; border-radius: 16px; backdrop-filter: blur(20px);
+  transition: all 0.4s var(--ease);
+}
+.hud-card:hover {
+  border-color: var(--border-bright); transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+.hud-card h3 { font-size: 20px; font-weight: 700; margin-bottom: 12px; color: #fff; }
+.hud-card p { font-size: 14px; color: var(--text-muted); line-height: 1.7; }
+.stat-val { font-size: 44px; font-weight: 800; color: #fff; font-family: monospace; line-height: 1; margin-bottom: 12px; }
+
+/* Pricing Cards */
+.price-card {
+  background: var(--panel); border: 1px solid var(--border);
+  padding: 40px; border-radius: 20px; backdrop-filter: blur(20px);
+  display: flex; flex-direction: column;
+}
+.price-card.featured {
+  border-color: var(--primary); background: rgba(99, 102, 241, 0.08);
+  box-shadow: 0 0 50px rgba(99, 102, 241, 0.15);
+}
+
+footer {
+  border-top: 1px solid var(--border); padding: 60px var(--pad) 40px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px; color: var(--text-muted);
+}
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+<div id="vignette"></div>
+
+<header class="nav">
+  <a href="#" class="brand">
+    <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+      <rect width="32" height="32" rx="8" fill="#6366f1" fill-opacity=".3"/>
+      <path d="M8 10L16 22L24 10" stroke="#38bdf8" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="16" cy="22" r="3" fill="#6366f1"/>
+    </svg>
+    VERDIO
+  </a>
+  <ul class="nav-links">
+    <li><a href="#features">Tính năng</a></li>
+    <li><a href="#infrastructure">Hạ tầng</a></li>
+    <li><a href="#developers">Lập trình viên</a></li>
+    <li><a href="#pricing">Bảng giá</a></li>
+  </ul>
+  <div class="nav-auth">
+    <a href="/login" target="_parent" class="nav-login">Đăng Nhập</a>
+    <a href="/register" target="_parent" class="nav-register">Đăng Ký</a>
+  </div>
+</header>
+
+<div class="page">
+  <!-- SCENE 0: GLOBAL REACH -->
+  <section class="sec" id="hero">
+    <div class="tag">Hạ tầng Tự động hóa Thế hệ Mới</div>
+    <h1 class="h-xl">Tiếp thị tự động<br><span style="background: linear-gradient(90deg, #38bdf8, #818cf8, #c084fc); -webkit-background-clip: text; color: transparent;">thiết kế cho quy mô lớn.</span></h1>
+    <p class="desc">Phát tán mã OTP giao dịch, chuỗi email chào mừng và các chiến dịch hàng loạt với cam kết chất lượng dịch vụ SLA và độ trễ hàng đợi tối ưu.</p>
+    <div style="display: flex; gap: 16px;">
+      <a href="/register" target="_parent" class="nav-register" style="padding: 14px 32px; border-radius: 10px; font-size: 14px;">Bắt đầu Miễn phí</a>
+      <a href="#features" class="nav-login" style="border: 1px solid var(--border); padding: 14px 32px; border-radius: 10px; font-size: 14px;">Khám phá Tính năng</a>
+    </div>
+  </section>
+
+  <!-- SCENE 1: REAL-TIME STREAMING -->
+  <section class="sec" id="features">
+    <div class="tag">Hiệu năng Thời gian Thực</div>
+    <h2 class="h-xl" style="font-size: clamp(32px, 4vw, 54px);">Tối ưu tốc độ.<br>Đảm bảo độ tin cậy.</h2>
+    <p class="desc">Tự động hóa hàng triệu điểm chạm khách hàng với khả năng gửi tin tức thì, định tuyến thông minh và hệ thống đo lường tương tác toàn diện.</p>
+    <div class="grid-3">
+      <div class="hud-card">
+        <div class="stat-val">99.99%</div>
+        <h3>Độ Sẵn Sàng Cao</h3>
+        <p>Kiến trúc phân tán chịu lỗi giúp các chiến dịch trọng yếu luôn vận hành liên tục không gián đoạn.</p>
+      </div>
+      <div class="hud-card">
+        <div class="stat-val">&lt; 3.25s</div>
+        <h3>Mã OTP Giao Dịch</h3>
+        <p>Tin nhắn khẩn cấp được ưu tiên vượt hàng đợi xử lý trước các chiến dịch tiếp thị hàng loạt.</p>
+      </div>
+      <div class="hud-card">
+        <div class="stat-val">Thời gian thực</div>
+        <h3>Đo lường Mở & Bấm Liên kết</h3>
+        <p>Ghi nhận chính xác tương tác mở email và lượt click của người dùng thông qua cổng webhook tốc độ cao.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCENE 2: ENTERPRISE INFRASTRUCTURE -->
+  <section class="sec" id="infrastructure">
+    <div class="tag">Phân lập Doanh nghiệp</div>
+    <h2 class="h-xl" style="font-size: clamp(32px, 4vw, 54px);">Phân lập tuyệt đối.<br>Tự động co giãn luồng.</h2>
+    <p class="desc">Mỗi tổ chức hoạt động trong không gian độc lập với cụm Worker tự động tăng giảm số luồng tùy theo khối lượng công việc thực tế.</p>
+    <div class="grid-3">
+      <div class="hud-card">
+        <h3>Auto-Scaling Concurrency</h3>
+        <p>Tự động nâng số luồng xử lý từ 2 lên đến 20 khi phát hiện tải tăng đột biến và hạ dần khi hàng đợi giải phóng.</p>
+      </div>
+      <div class="hud-card">
+        <h3>Bảo mật & Phân quyền RBAC</h3>
+        <p>Kiểm soát quyền hạn chặt chẽ theo vai trò người dùng (Owner, Admin, Member) trong từng Workspace.</p>
+      </div>
+      <div class="hud-card">
+        <h3>Quản lý Danh bạ CRM</h3>
+        <p>Phân nhóm khách hàng theo thẻ nhãn động (Tags) và chèn dữ liệu cá nhân hóa linh hoạt.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCENE 3: DEVELOPER API -->
+  <section class="sec" id="developers">
+    <div class="tag">Trải nghiệm Lập trình viên</div>
+    <h2 class="h-xl" style="font-size: clamp(32px, 4vw, 54px);">Tích hợp nhanh chóng.<br>Mở rộng không giới hạn.</h2>
+    <p class="desc">Hệ thống REST API hiện đại, Webhook tin cậy và SDK trực quan giúp tích hợp vào backend ứng dụng chỉ trong vài phút.</p>
+    <div class="grid-3">
+      <div class="hud-card">
+        <h3>Chuẩn REST API</h3>
+        <p>Kích hoạt gửi một email xác thực hoặc phát động chiến dịch hàng loạt chỉ với một endpoint API duy nhất.</p>
+      </div>
+      <div class="hud-card">
+        <h3>Nội dung HTML Động</h3>
+        <p>Hỗ trợ chèn biến động vào nội dung email giúp tự động hiển thị tên khách hàng và thông tin đơn hàng.</p>
+      </div>
+      <div class="hud-card">
+        <h3>Đồng bộ Trạng thái Hàng đợi</h3>
+        <p>Nhận phản hồi trạng thái hoàn thành hoặc thất bại trực tiếp về hệ thống qua Webhook thời gian thực.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCENE 4: PRICING PLANS -->
+  <section class="sec" id="pricing">
+    <div class="tag">Bảng giá Minh bạch</div>
+    <h2 class="h-xl" style="font-size: clamp(32px, 4vw, 54px);">Gói dịch vụ linh hoạt.</h2>
+    <p class="desc">Bắt đầu miễn phí khi xây dựng thử nghiệm, nâng cấp dễ dàng khi số lượng người nhận và quy mô gửi thư tăng trưởng.</p>
+    <div class="grid-3">
+      <div class="price-card">
+        <h3 style="color: var(--text-muted); font-size: 18px;">Starter</h3>
+        <div style="font-size: 40px; font-weight: 800; margin: 16px 0;">0₫ <span style="font-size: 15px; color: var(--text-muted); font-weight: 400;">/ tháng</span></div>
+        <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 24px;">Phù hợp cho dự án cá nhân và thử nghiệm tính năng tự động hóa cơ bản.</p>
+        <a href="/register" target="_parent" class="nav-login" style="border: 1px solid var(--border); text-align: center; border-radius: 8px;">Bắt đầu Miễn phí</a>
+      </div>
+      <div class="price-card featured">
+        <h3 style="color: var(--accent); font-size: 18px;">Professional</h3>
+        <div style="font-size: 40px; font-weight: 800; margin: 16px 0;">1.200.000₫ <span style="font-size: 15px; color: var(--text-muted); font-weight: 400;">/ tháng</span></div>
+        <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 24px;">Dành cho doanh nghiệp đang tăng trưởng, cần ưu tiên tốc độ gửi giao dịch và báo cáo chuyên sâu.</p>
+        <a href="/register" target="_parent" class="nav-register" style="text-align: center; border-radius: 8px;">Đăng ký Ngay</a>
+      </div>
+      <div class="price-card">
+        <h3 style="color: var(--violet); font-size: 18px;">Enterprise</h3>
+        <div style="font-size: 40px; font-weight: 800; margin: 16px 0;">4.800.000₫ <span style="font-size: 15px; color: var(--text-muted); font-weight: 400;">/ tháng</span></div>
+        <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 24px;">Dành cho quy mô gửi lớn với luồng Worker chuyên dụng và cam kết SLA mức cao nhất.</p>
+        <a href="/register" target="_parent" class="nav-login" style="border: 1px solid var(--border); text-align: center; border-radius: 8px;">Liên hệ Tư vấn</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div>© 2026 VERDIO Platform — Đồ Án Tốt Nghiệp Kỹ Thuật Phần Mềm</div>
+    <div>REDIS // BULLMQ // MONGODB // REACT</div>
+  </footer>
+</div>
+
+<!-- THREE.JS PROCEDURAL MEGACITY FLYTHROUGH -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function() {
+  const canvas = document.getElementById('gl');
+  let renderer, scene, camera;
+  let cityGroup = new THREE.Group();
+  let trafficLines = [];
+  let quantumMesh, quantumGeo;
+
+  const WAYPOINTS = [
+    { pos: [0, 60, 85], look: [0, 15, 0] },
+    { pos: [0, 10, 30], look: [0, 10, -50] },
+    { pos: [0, 4, -30], look: [0, 4, -70] },
+    { pos: [12, -4, -40], look: [0, 2, -40] },
+    { pos: [0, 2, -10], look: [0, 50, -10] }
+  ];
+
+  function generateBuildingTexture() {
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 256;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#080d1a';
+    ctx.fillRect(0, 0, 128, 256);
+    
+    for (let y = 8; y < 248; y += 12) {
+      for (let x = 6; x < 122; x += 10) {
+        if (Math.random() > 0.45) {
+          const isCyan = Math.random() > 0.6;
+          ctx.fillStyle = isCyan ? '#38bdf8' : (Math.random() > 0.5 ? '#818cf8' : '#f59e0b');
+          ctx.fillRect(x, y, 6, 7);
+        }
+      }
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+
+  function init3D() {
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.3;
+    renderer.setClearColor(0x010409, 1);
+
+    scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x010409, 0.015);
+
+    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 250);
+    camera.position.set(WAYPOINTS[0].pos[0], WAYPOINTS[0].pos[1], WAYPOINTS[0].pos[2]);
+    scene.add(camera);
+
+    const ambLight = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambLight);
+
+    const dirLight = new THREE.DirectionalLight(0x38bdf8, 2.2);
+    dirLight.position.set(40, 100, 50);
+    scene.add(dirLight);
+
+    const windowTex = generateBuildingTexture();
+    const buildingMat = new THREE.MeshStandardMaterial({
+      map: windowTex,
+      roughness: 0.2,
+      metalness: 0.85,
+      emissive: 0x1e1b4b,
+      emissiveIntensity: 0.35
+    });
+
+    const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+
+    for (let x = -80; x <= 80; x += 14) {
+      for (let z = -120; z <= 60; z += 14) {
+        if (Math.abs(x) < 8 && z > -70 && z < 40) continue;
+
+        const height = 15 + Math.random() * 45;
+        const width = 6 + Math.random() * 5;
+        const depth = 6 + Math.random() * 5;
+
+        const building = new THREE.Mesh(boxGeo, buildingMat);
+        building.position.set(x + (Math.random() - 0.5) * 3, height / 2, z + (Math.random() - 0.5) * 3);
+        building.scale.set(width, height, depth);
+        cityGroup.add(building);
+
+        if (height > 35) {
+          const beaconGeo = new THREE.CylinderGeometry(0.1, 0.1, 6, 8);
+          const beaconMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+          const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+          beacon.position.set(building.position.x, height + 3, building.position.z);
+          cityGroup.add(beacon);
+        }
+      }
+    }
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(300, 300),
+      new THREE.MeshStandardMaterial({ color: 0x020617, roughness: 0.1, metalness: 0.9 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    cityGroup.add(ground);
+
+    const grid = new THREE.GridHelper(300, 60, 0x6366f1, 0x0f172a);
+    grid.position.y = 0.05;
+    cityGroup.add(grid);
+
+    const trafficGeo = new THREE.BoxGeometry(0.3, 0.2, 4);
+    const trafficMatCyan = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+    const trafficMatViolet = new THREE.MeshBasicMaterial({ color: 0xc084fc });
+
+    for (let i = 0; i < 35; i++) {
+      const mesh = new THREE.Mesh(trafficGeo, i % 2 === 0 ? trafficMatCyan : trafficMatViolet);
+      const laneX = (i % 2 === 0 ? -2.5 : 2.5) + (Math.random() - 0.5) * 1.5;
+      mesh.position.set(laneX, 0.3, -120 + Math.random() * 180);
+      mesh.userData = { speed: 0.7 + Math.random() * 0.8 };
+      trafficLines.push(mesh);
+      cityGroup.add(mesh);
+    }
+
+    quantumGeo = new THREE.PlaneGeometry(32, 32, 40, 40);
+    quantumGeo.rotateX(-Math.PI / 2);
+    quantumMesh = new THREE.Mesh(
+      quantumGeo,
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.5 })
+    );
+    quantumMesh.position.set(0, 0, -45);
+    cityGroup.add(quantumMesh);
+
+    scene.add(cityGroup);
+  }
+
+  const lerp = (a, b, t) => a + (b - a) * t;
+  let currentPos = [...WAYPOINTS[0].pos];
+  let currentLook = [...WAYPOINTS[0].look];
+  let clock = 0;
+
+  function animate() {
+    requestAnimationFrame(animate);
+    clock += 0.015;
+
+    trafficLines.forEach(t => {
+      t.position.z += t.userData.speed;
+      if (t.position.z > 60) t.position.z = -120;
+    });
+
+    if (quantumGeo) {
+      const pos = quantumGeo.attributes.position.array;
+      for (let i = 0; i < pos.length / 3; i++) {
+        const u = pos[i * 3];
+        const v = pos[i * 3 + 2];
+        pos[i * 3 + 1] = Math.sin(u * 0.4 + clock * 2.5) * Math.cos(v * 0.4 + clock * 2.5) * 1.8;
+      }
+      quantumGeo.attributes.position.needsUpdate = true;
+    }
+
+    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+    const progress = Math.max(0, Math.min(1, window.scrollY / (maxScroll || 1))) * (WAYPOINTS.length - 1);
+    const index = Math.floor(progress);
+    const frac = progress - index;
+
+    const nextIndex = Math.min(index + 1, WAYPOINTS.length - 1);
+    const wpA = WAYPOINTS[index];
+    const wpB = WAYPOINTS[nextIndex];
+
+    for (let i = 0; i < 3; i++) {
+      const targetPos = lerp(wpA.pos[i], wpB.pos[i], frac);
+      const targetLook = lerp(wpA.look[i], wpB.look[i], frac);
+      currentPos[i] = lerp(currentPos[i], targetPos, 0.05);
+      currentLook[i] = lerp(currentLook[i], targetLook, 0.05);
+    }
+
+    camera.position.set(currentPos[0], currentPos[1], currentPos[2]);
+    camera.lookAt(new THREE.Vector3(currentLook[0], currentLook[1], currentLook[2]));
+
+    renderer.render(scene, camera);
+  }
+
+  window.addEventListener('resize', () => {
+    if (camera && renderer) {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+  });
+
+  init3D();
+  animate();
+})();
+</script>
+</body>
+</html>

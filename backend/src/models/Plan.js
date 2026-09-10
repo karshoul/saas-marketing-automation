@@ -5,7 +5,6 @@ const planSchema = new mongoose.Schema({
   code: {
     type: String,
     required: true,
-    unique: true,
     enum: Object.values(PLAN_CODES),
     uppercase: true,
     trim: true

@@ -1,0 +1,55 @@
+services:
+  # 1. Bộ đệm & Hàng đợi Redis
+  redis:
+    image: redis:7-alpine
+    container_name: verdio-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - verdio-net
+
+  # 2. Backend API Server & BullMQ Worker
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: verdio-backend
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      - MONGO_URI=${MONGO_URI}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=verdio_super_secret_jwt_key_2026
+    depends_on:
+      - redis
+    networks:
+      - verdio-net
+
+  # 3. Frontend React Portal
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: verdio-frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - verdio-net
+
+volumes:
+  redis_data:
+
+networks:
+  verdio-net:
+    driver: bridge

@@ -6,7 +6,6 @@ const subscriptionSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Tenant',
     required: true,
-    unique: true
   },
   planId: {
     type: mongoose.Schema.Types.ObjectId,

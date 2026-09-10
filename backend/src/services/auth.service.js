@@ -270,11 +270,13 @@ class AuthService {
     }
 
     // 4. Sinh cặp JWT Access Token & Refresh Token
-    const tokenPayload = {
-      id: user._id,
-      tenantId: user.tenantId,
-      role: user.role
-    };
+    // Payload khi ký JWT (sign JWT)
+const tokenPayload = {
+  id: user._id,
+  tenantId: user.tenantId,
+  role: user.role,
+  email: user.email
+};
 
     const accessToken = signAccessToken(tokenPayload);
     const plainRefreshToken = signRefreshToken({ id: user._id });

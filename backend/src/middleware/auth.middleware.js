@@ -8,28 +8,25 @@ export const authenticateUser = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     
-    // 1. Kiểm tra định dạng Header Authorization: Bearer <Token>
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return next(new ApiError(401, 'Yêu cầu xác thực tài khoản. Vui lòng đính kèm mã truy cập hợp lệ.'));
     }
     
     const accessToken = authHeader.split(' ')[1];
     
-    // 2. Thực thi giải mã chữ ký bảo mật từ lớp tiện ích Utilities
     try {
       const decodedPayload = verifyAccessToken(accessToken);
       
-      // 3. TIÊM HỆ TRỤC TỌA ĐỘ MULTI-TENANT VÀO REQUEST PIPELINE
-      // Từ đây, mọi Controller và Service phía sau đều có thể gọi req.user.tenantId một cách an toàn
+      // Tiêm đầy đủ thông tin định danh vào request pipeline
       req.user = {
-        id: decodedPayload.id,
+        id: decodedPayload.id || decodedPayload.userId,
         tenantId: decodedPayload.tenantId,
-        role: decodedPayload.role
+        role: decodedPayload.role,
+        email: decodedPayload.email // BẮT BUỘC ĐÍNH KÈM EMAIL để admin.middleware nhận diện
       };
       
       next();
     } catch (jwtError) {
-      // Bẫy lỗi và bắn mã lỗi 401 cụ thể để Frontend ReactJS kích hoạt luồng gọi API refresh-token ngầm
       return next(new ApiError(401, jwtError.message || 'Mã truy cập không hợp lệ hoặc đã hết hạn.'));
     }
   } catch (error) {
