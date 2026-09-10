@@ -7,7 +7,7 @@ import { env } from './src/config/env.js';
 import { connectDB } from './src/config/database.js';
 import { redis } from './src/config/redis.js';
 import Plan from './src/models/Plan.js';
-import { seedPlans } from './src/seeds/plan.seed.js';
+import { seedPlans } from './src/config/plans.config.js';
 // 2. Import Worker & Queue Engine
 import { initEmailWorker } from './src/queues/email.queue.js';
 import workerScaler from './src/schedulers/worker.scaler.js';
