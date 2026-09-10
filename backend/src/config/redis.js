@@ -1,49 +1,38 @@
 import Redis from 'ioredis';
 import { env } from './env.js';
 
-// Ưu tiên đọc REDIS_URL từ biến môi trường (Render/Upstash)
-const redisUrl = process.env.REDIS_URL || env.redis?.url;
-
-export const redisConfig = redisUrl
-  ? {
-      maxRetriesPerRequest: null,
-      enableReadyCheck: false,
-      tls: {
-        rejectUnauthorized: false
-      },
-      retryStrategy(times) {
-        const delay = Math.min(times * 100, 3000);
-        console.warn(`🔄 [Redis Reconnect Attempt]: Đang thử kết nối lại lần thứ ${times} sau ${delay}ms...`);
-        return delay;
-      }
+// Cấu hình kết nối tối ưu cho Upstash Redis & BullMQ
+export const redisConfig = {
+  host: (process.env.REDIS_HOST || env.redis.host || '').replace(/["']/g, '').trim(),
+  port: Number(process.env.REDIS_PORT || env.redis.port) || 6379,
+  password: (process.env.REDIS_PASSWORD || env.redis.password || '').replace(/["']/g, '').trim(),
+  // Bắt buộc bật TLS khi kết nối Upstash
+  tls: {
+    rejectUnauthorized: false
+  },
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
+  keepAlive: 10000, // Duy trì kết nối socket tránh Upstash tự ngắt
+  retryStrategy(times) {
+    if (times > 20) {
+      console.error('❌ [Redis Error]: Không thể kết nối lại sau 20 lần thử.');
+      return null;
     }
-  : {
-      host: env.redis.host,
-      port: env.redis.port,
-      password: env.redis.password || undefined,
-      maxRetriesPerRequest: null,
-      // Bật TLS nếu host là Upstash hoặc môi trường production
-      tls: env.redis.host?.includes('upstash.io') ? { rejectUnauthorized: false } : undefined,
-      retryStrategy(times) {
-        const delay = Math.min(times * 100, 3000);
-        console.warn(`🔄 [Redis Reconnect Attempt]: Đang thử kết nối lại lần thứ ${times} sau ${delay}ms...`);
-        return delay;
-      }
-    };
+    return Math.min(times * 200, 3000);
+  }
+};
 
-// Khởi tạo Redis instance
-const redis = redisUrl ? new Redis(redisUrl, redisConfig) : new Redis(redisConfig);
+// Khởi tạo Redis instance chính
+const redis = new Redis(redisConfig);
 
 redis.on('connect', () => {
   console.log('⚡ [Redis Connection]: Thiết lập đường truyền đến cụm Redis thành công!');
 });
 
 redis.on('error', (err) => {
-  console.error(`❌ [Redis Runtime Error]: Phát hiện lỗi hệ thống mạng lưới Redis: ${err.message}`);
-});
-
-redis.on('end', () => {
-  console.warn('⚠️ [Redis Event]: Chu kỳ kết nối Redis đã chính thức kết thúc hoàn toàn.');
+  // Bỏ qua lỗi ngắt kết nối tạm thời từ Upstash serverless
+  if (err.message.includes('ECONNRESET')) return;
+  console.error(`❌ [Redis Runtime Error]: ${err.message}`);
 });
 
 export { redis };
