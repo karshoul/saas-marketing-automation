@@ -1,19 +1,38 @@
 import Redis from 'ioredis';
 import { env } from './env.js';
 
-export const redisConfig = {
-  host: env.redis.host,
-  port: env.redis.port,
-  password: env.redis.password,
-  maxRetriesPerRequest: null,
-  retryStrategy(times) {
-    const delay = Math.min(times * 100, 3000);
-    console.warn(`🔄 [Redis Reconnect Attempt]: Đang thử kết nối lại lần thứ ${times} sau ${delay}ms...`);
-    return delay;
-  },
-};
+// Ưu tiên đọc REDIS_URL từ biến môi trường (Render/Upstash)
+const redisUrl = process.env.REDIS_URL || env.redis?.url;
 
-const redis = new Redis(redisConfig);
+export const redisConfig = redisUrl
+  ? {
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false,
+      tls: {
+        rejectUnauthorized: false
+      },
+      retryStrategy(times) {
+        const delay = Math.min(times * 100, 3000);
+        console.warn(`🔄 [Redis Reconnect Attempt]: Đang thử kết nối lại lần thứ ${times} sau ${delay}ms...`);
+        return delay;
+      }
+    }
+  : {
+      host: env.redis.host,
+      port: env.redis.port,
+      password: env.redis.password || undefined,
+      maxRetriesPerRequest: null,
+      // Bật TLS nếu host là Upstash hoặc môi trường production
+      tls: env.redis.host?.includes('upstash.io') ? { rejectUnauthorized: false } : undefined,
+      retryStrategy(times) {
+        const delay = Math.min(times * 100, 3000);
+        console.warn(`🔄 [Redis Reconnect Attempt]: Đang thử kết nối lại lần thứ ${times} sau ${delay}ms...`);
+        return delay;
+      }
+    };
+
+// Khởi tạo Redis instance
+const redis = redisUrl ? new Redis(redisUrl, redisConfig) : new Redis(redisConfig);
 
 redis.on('connect', () => {
   console.log('⚡ [Redis Connection]: Thiết lập đường truyền đến cụm Redis thành công!');

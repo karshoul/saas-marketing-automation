@@ -12,10 +12,16 @@ const requiredEnvs = [
   'JWT_REFRESH_SECRET'
 ];
 
-// Kiểm tra nghiêm ngặt sự tồn tại của các cấu hình bắt buộc trước khi booting hệ thống
-for (const env of requiredEnvs) {
-  if (!process.env[env]) {
-    throw new Error(`❌ [Critical Config Error]: Biến môi trường ${env} bắt buộc nhưng chưa được cấu hình trong file .env`);
+// Fallback tương thích: Nếu có JWT_SECRET chung thì gán cho cả 2
+if (process.env.JWT_SECRET) {
+  process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+  process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+}
+
+// Kiểm tra nghiêm ngặt sự tồn tại của các cấu hình bắt buộc
+for (const key of requiredEnvs) {
+  if (!process.env[key]) {
+    throw new Error(`❌ [Critical Config Error]: Biến môi trường ${key} bắt buộc nhưng chưa được cấu hình.`);
   }
 }
 
@@ -32,18 +38,18 @@ export const env = {
   
   // Redis Configuration
   redis: {
+    url: process.env.REDIS_URL,
     host: process.env.REDIS_HOST,
     port: parseInt(process.env.REDIS_PORT, 10) || 6379,
     password: process.env.REDIS_PASSWORD || undefined,
   },
   
-  // Security Tokens (Access / Refresh Secrets)
+  // Security Tokens
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET,
     refreshSecret: process.env.JWT_REFRESH_SECRET,
   },
   
-  // Third-party Provider Integrations (Sẽ dùng cho các Sprint sau)
   resendApiKey: process.env.RESEND_API_KEY || '',
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',

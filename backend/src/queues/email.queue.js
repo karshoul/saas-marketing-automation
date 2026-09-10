@@ -1,11 +1,12 @@
 import { Queue, Worker } from 'bullmq';
-import { redis } from '../config/redis.js';
+import { redisConfig, redis } from '../config/redis.js';
 import Campaign from '../models/Campaign.js';
 
 export const EMAIL_QUEUE_NAME = 'marketing-email-queue';
 
+// BullMQ tự khởi tạo kết nối riêng với redisConfig có hỗ trợ TLS
 export const emailQueue = new Queue(EMAIL_QUEUE_NAME, {
-  connection: redis,
+  connection: redisConfig,
   defaultJobOptions: {
     attempts: 3,
     backoff: {
@@ -25,7 +26,7 @@ export const initEmailWorker = (concurrency = 5) => {
     async (job) => {
       const { to, subject, html, campaignId } = job.data;
 
-      // Mô phỏng thời gian gửi email ngầm (200ms)
+      // Giả lập thời gian gửi email ngầm (200ms)
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       return {
@@ -36,7 +37,7 @@ export const initEmailWorker = (concurrency = 5) => {
       };
     },
     {
-      connection: redis,
+      connection: redisConfig, // Dùng redisConfig để worker có kết nối độc lập
       concurrency,
       limiter: {
         max: 50,
