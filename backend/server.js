@@ -1,21 +1,36 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import mongoose from 'mongoose';
-import { env } from './config/env.js';
-import { redis } from './config/redis.js';
-import { initEmailWorker } from './queues/email.queue.js';
 
-// Import Routes
-import authRoutes from './routes/auth.routes.js';
-import contactRoutes from './routes/contact.routes.js';
-import campaignRoutes from './routes/campaign.routes.js';
+// 1. Import cấu hình hạ tầng
+import { env } from './src/config/env.js';
+import { connectDB } from './src/config/database.js';
+import { redis } from './src/config/redis.js';
+import Plan from './src/models/Plan.js';
+import { seedPlans } from './src/config/plans.config.js';
+// 2. Import Worker & Queue Engine
+import { initEmailWorker } from './src/queues/email.queue.js';
+import workerScaler from './src/schedulers/worker.scaler.js';
+
+// 3. Import Middlewares
+import { globalErrorHandler } from './src/middleware/error.middleware.js';
+import { globalRateLimiter } from './src/middleware/rateLimit.middleware.js';
+
+// 4. Import Routes
+import authRoutes from './src/routes/auth.routes.js';
+import adminRoutes from './src/routes/admin.routes.js';
+import contactRoutes from './src/routes/contact.routes.js';
+import tenantRoutes from './src/routes/tenant.routes.js';
+import campaignRoutes from './src/routes/campaign.routes.js';
+import queueRouter from './src/routes/queue.routes.js';
+import billingRouter from './src/routes/billing.routes.js';
 
 const app = express();
 
 // ==========================================
-// 1. CẤU HÌNH CORS TOÀN DIỆN CHO VERCEL & LOCAL
+// 🛡️ MIDDLEWARES SETUP
 // ==========================================
+
 const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
@@ -26,9 +41,6 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Cho phép requests từ Postman/server-to-server (không có origin)
-    // Hoặc nằm trong danh sách allowedOrigins
-    // Hoặc bất kỳ sub-domain preview nào từ Vercel (*.vercel.app)
     if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
@@ -46,77 +58,135 @@ const corsOptions = {
   optionsSuccessStatus: 204
 };
 
-// Đặt CORS trước toàn bộ middleware và routes khác
+// Cấu hình CORS và xử lý Preflight cho toàn bộ router
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
-// ==========================================
-// 2. PARSERS MIDDLEWARES
-// ==========================================
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Đọc cookie từ Request
 app.use(cookieParser());
 
+// Read JSON Payload & URL Encoded
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Áp dụng Rate Limiting chung cho API
+app.use('/api', globalRateLimiter);
+
 // ==========================================
-// 3. HEALTH CHECK ENDPOINT
+// 🛣️ ROUTES REGISTRATION
 // ==========================================
+
+// Endpoint Health Check hệ thống
 app.get('/', (req, res) => {
+  const scalerMetrics = workerScaler.getMetrics();
+
   res.status(200).json({
     success: true,
     message: '🚀 VERDIO Multi-Tenant SaaS Engine running smooth!',
-    environment: process.env.NODE_ENV || 'production',
+    environment: env.nodeEnv,
+    autoScaler: scalerMetrics,
     timestamp: new Date().toISOString()
   });
 });
 
-// ==========================================
-// 4. API ROUTES
-// ==========================================
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/contacts', contactRoutes);
+app.use('/api/tenants', tenantRoutes);
 app.use('/api/campaigns', campaignRoutes);
+app.use('/api/queue', queueRouter);
+app.use('/api/billing', billingRouter);
 
-// ==========================================
-// 5. GLOBAL ERROR HANDLER
-// ==========================================
-app.use((err, req, res, next) => {
-  console.error('❌ [Unhandled Server Error]:', err.stack || err.message);
-  res.status(err.status || 500).json({
+// Bẫy lỗi 404 Route Not Found
+app.use((req, res) => {
+  res.status(404).json({
     success: false,
-    message: err.message || 'Lỗi hệ thống nội bộ'
+    statusCode: 404,
+    message: `❌ Route [${req.method}] ${req.originalUrl} không tồn tại trên hệ thống.`
   });
 });
 
 // ==========================================
-// 6. KHỞI TẠO SERVICES VÀ START SERVER
+// 💥 GLOBAL ERROR HANDLER
 // ==========================================
-const PORT = process.env.PORT || 10000;
+app.use(globalErrorHandler);
+
+// ==========================================
+// 🚀 BOOTSTRAP SERVER & ASYNC ENGINES
+// ==========================================
+let server;
+let emailWorker;
 
 const startServer = async () => {
   try {
-    // Kết nối MongoDB Atlas
-    const mongoUri = process.env.MONGO_URI || env.mongoUri;
-    await mongoose.connect(mongoUri);
-    console.log('🔗 [MongoDB Connection]: Kết nối cơ sở dữ liệu MongoDB thành công!');
+    // 1. Kết nối MongoDB
+    await connectDB();
 
-    // Khởi tạo BullMQ Background Worker
-    initEmailWorker();
+    // Tự động seed nếu database chưa có gói cước
+    const planCount = await Plan.countDocuments();
+    if (planCount === 0) {
+      console.log('🌱 [Auto-Seed]: Chưa có dữ liệu Plan, tiến hành tự động khởi tạo gói FREE/PRO/ENTERPRISE...');
+      await seedPlans();
+    }
+
+    // 2. Khởi tạo BullMQ Email Worker (Bắt đầu với mức tối thiểu 2 concurrency)
+    emailWorker = initEmailWorker(2);
     console.log('⚙️ [BullMQ Engine]: Email Background Worker đã sẵn sàng nhận jobs.');
 
-    // Bắt đầu lắng nghe requests
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log('==================================================');
+    // 3. Khởi chạy Bộ điều phối tự động co giãn Worker (Min: 2, Max: 20, chu kỳ đo: 3s)
+    workerScaler.init(emailWorker, {
+      minConcurrency: 2,
+      maxConcurrency: 20,
+      checkIntervalMs: 3000
+    });
+
+    // 4. Khởi chạy Server Node.js
+    const PORT = env.port || 5000;
+    server = app.listen(PORT, () => {
+      console.log(`\n==================================================`);
       console.log(`🚀 VERDIO Server is running on: http://localhost:${PORT}`);
       console.log(`🌐 Health Check Endpoint: http://localhost:${PORT}/`);
       console.log(`🔑 Auth Endpoint: http://localhost:${PORT}/api/auth`);
       console.log(`👥 Contacts Endpoint: http://localhost:${PORT}/api/contacts`);
       console.log(`📢 Campaigns Endpoint: http://localhost:${PORT}/api/campaigns`);
-      console.log('==================================================');
+      console.log(`==================================================\n`);
     });
   } catch (error) {
-    console.error('❌ Không thể khởi động server:', error.message);
+    console.error('💥 Lỗi khởi động Server:', error.message);
     process.exit(1);
   }
 };
+
+// ==========================================
+// 🛑 GRACEFUL SHUTDOWN HANDLER
+// ==========================================
+const shutdown = async (signal) => {
+  console.log(`\n⚠️ [${signal}] Nhận tín hiệu dừng server. Đang giải phóng tài nguyên...`);
+
+  // 1. Dừng vòng lặp Auto-scaler
+  workerScaler.stop();
+
+  // 2. Đóng HTTP Server
+  if (server) {
+    server.close(() => console.log('🛑 [HTTP Server]: Đã đóng tiếp nhận request mới.'));
+  }
+
+  // 3. Đóng Worker
+  if (emailWorker) {
+    await emailWorker.close();
+    console.log('🛑 [BullMQ Worker]: Đã hoàn tất các jobs đang xử lý và đóng worker.');
+  }
+
+  // 4. Ngắt kết nối Redis
+  if (redis) {
+    await redis.quit();
+    console.log('🛑 [Redis]: Đã ngắt kết nối an toàn.');
+  }
+
+  process.exit(0);
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 startServer();
