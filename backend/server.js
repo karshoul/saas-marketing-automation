@@ -60,7 +60,6 @@ const corsOptions = {
 
 // Cấu hình CORS và xử lý Preflight cho toàn bộ router
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
 
 // Đọc cookie từ Request
 app.use(cookieParser());
