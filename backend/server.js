@@ -1,3 +1,6 @@
+import dns from 'dns';
+dns.setDefaultResultOrder('ipv4first'); // Ép buộc Node.js luôn dùng IPv4 thay vì IPv6
+
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
