@@ -126,36 +126,54 @@ export const initEmailWorker = (concurrency = 5) => {
 
   // Hook khi Job gửi thành công
   worker.on('completed', async (job, result) => {
-    console.log(`✉️ [Worker Job Done]: Gửi tới ${job.data.to} (ID: ${job.id}, Wait: ${result.waitingTimeMs}ms, SLA Violated: ${result.isSlaViolated})`);
+    console.log(`✉️ [Worker Job Done]: Gửi tới ${job.data.to} (ID: ${job.id})`);
 
     try {
-      const { tenantId, campaignId, slaSeconds } = job.data;
+      const { tenantId, campaignId } = job.data;
 
-      // 1. 🚀 CƠ CHẾ ĐẾM HẠN NGẠC NGUYÊN TỬ (Ý 3): 
-      // Luôn tăng bộ đếm số lượng email đã gửi trong tháng của Tenant (An toàn đồng thời)
+      // 1. Tăng quota của Tenant
       if (tenantId) {
         await Tenant.findByIdAndUpdate(tenantId, {
           $inc: { 'usage.emailsSentThisMonth': 1 }
         });
       }
 
-      // 2. Cập nhật thống kê chiến dịch nếu là mail chiến dịch
+      // 2. Cập nhật trực tiếp chiến dịch trong MongoDB
       if (campaignId) {
+        // Cập nhật tăng đồng thời cả stats.sent và stats.sentCount
         const campaign = await Campaign.findByIdAndUpdate(
           campaignId,
-          { $inc: { 'stats.sentCount': 1 } },
+          {
+            $inc: {
+              'stats.sent': 1,
+              'stats.sentCount': 1
+            }
+          },
           { new: true }
         );
 
-        if (campaign && campaign.stats.sentCount >= campaign.stats.totalRecipients) {
-          campaign.status = 'COMPLETED';
-          campaign.sentAt = new Date();
-          await campaign.save();
-          console.log(`🎉 [Campaign Finished]: Chiến dịch ${campaign._id} đã hoàn tất 100%!`);
+        if (campaign) {
+          // Lấy tổng số người nhận (hỗ trợ cả root field và stats field)
+          const totalRecipients = campaign.totalRecipients 
+            || campaign.stats?.totalRecipients 
+            || (campaign.recipients ? campaign.recipients.length : 1);
+
+          const currentSent = campaign.stats?.sent ?? campaign.stats?.sentCount ?? 0;
+          const currentFailed = campaign.stats?.failed ?? campaign.stats?.failedCount ?? 0;
+
+          console.log(`📊 [Campaign Progress]: Đã xử lý ${currentSent + currentFailed}/${totalRecipients} mail`);
+
+          // Nếu đã xử lý xong toàn bộ danh sách -> Đổi trạng thái sang COMPLETED
+          if ((currentSent + currentFailed) >= totalRecipients) {
+            campaign.status = 'COMPLETED';
+            campaign.sentAt = new Date();
+            await campaign.save();
+            console.log(`🎉 [Campaign Finished]: Chiến dịch ${campaign._id} đã HOÀN THÀNH 100%!`);
+          }
         }
       }
     } catch (err) {
-      console.error('❌ Lỗi cập nhật stats chiến dịch hoặc quota Tenant:', err.message);
+      console.error('❌ Lỗi cập nhật MongoDB sau khi gửi:', err.message);
     }
   });
 
@@ -165,9 +183,29 @@ export const initEmailWorker = (concurrency = 5) => {
 
     try {
       if (job?.data?.campaignId) {
-        await Campaign.findByIdAndUpdate(job.data.campaignId, {
-          $inc: { 'stats.failedCount': 1 }
-        });
+        const campaign = await Campaign.findByIdAndUpdate(
+          job.data.campaignId,
+          {
+            $inc: { 
+              'stats.failedCount': 1,
+              'stats.failed': 1 
+            }
+          },
+          { new: true }
+        );
+
+        if (campaign) {
+          const totalRecipients = campaign.totalRecipients 
+            || campaign.stats?.totalRecipients 
+            || 1;
+          const totalSent = campaign.stats?.sentCount || campaign.stats?.sent || 0;
+          const totalFailed = campaign.stats?.failedCount || campaign.stats?.failed || 0;
+
+          if ((totalSent + totalFailed) >= totalRecipients) {
+            campaign.status = 'COMPLETED';
+            await campaign.save();
+          }
+        }
       }
     } catch (dbErr) {
       console.error('❌ Lỗi cập nhật stats thất bại:', dbErr.message);
