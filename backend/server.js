@@ -32,6 +32,9 @@ import membershipRoutes from './src/routes/membership.routes.js';
 
 const app = express();
 
+// Cho phép Express nhận diện đúng IP client qua Reverse Proxy của Render
+app.set('trust proxy', 1);
+
 // ==========================================
 // 🛡️ MIDDLEWARES SETUP
 // ==========================================
