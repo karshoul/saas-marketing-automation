@@ -44,6 +44,17 @@ export default function Dashboard() {
       const rawTenant = tenantRes.data?.data?.tenant || tenantRes.data?.tenant || tenantRes.data?.data;
       setTenant(rawTenant);
 
+      // 🔥 CẬP NHẬT QUAN TRỌNG: Đồng bộ ngay workspaceId chính chủ vào localStorage để xóa bỏ ID rác cũ!
+      if (rawTenant) {
+        const currentWorkspaceId = rawTenant.id || rawTenant._id;
+        if (currentWorkspaceId) {
+          localStorage.setItem("workspaceId", currentWorkspaceId);
+        }
+        if (rawTenant.name) {
+          localStorage.setItem("workspaceName", rawTenant.name);
+        }
+      }
+
       const activePlan = (rawTenant?.plan || rawTenant?.subscriptionPlan || "FREE").toUpperCase();
       const fallbackLimits = { FREE: 3000, PRO: 50000, ENTERPRISE: 500000 };
       const limit = rawTenant?.quotas?.monthlyEmailLimit || fallbackLimits[activePlan] || 3000;
@@ -65,7 +76,6 @@ export default function Dashboard() {
       });
 
       const openRate = totalSent > 0 ? ((totalOpened / totalSent) * 100).toFixed(1) + "%" : "0.0%";
-      const clickRate = totalOpened > 0 ? ((totalClicked / totalOpened) * 100).toFixed(1) + "%" : "0.0%";
 
       // 3. Lấy số lượng Contact hiện có
       try {
@@ -83,7 +93,7 @@ export default function Dashboard() {
         monthlyLimit: limit,
         deliveryRate: "99.8%",
         openRate,
-        clickRate
+        clickRate: totalOpened > 0 ? ((totalClicked / totalOpened) * 100).toFixed(1) + "%" : "0.0%"
       });
     } catch (err) {
       console.error("Lỗi tải dữ liệu Dashboard:", err);

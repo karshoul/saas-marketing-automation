@@ -2,6 +2,7 @@ import { Queue, Worker } from 'bullmq';
 import { redis } from '../config/redis.js';
 import Campaign from '../models/Campaign.js';
 import mailService from '../services/mail.service.js';
+import Tenant from '../models/Tenant.js';
 
 // ========================================================
 // 1. TÊN QUEUE THỐNG NHẤT TOÀN HỆ THỐNG
@@ -128,9 +129,20 @@ export const initEmailWorker = (concurrency = 5) => {
     console.log(`✉️ [Worker Job Done]: Gửi tới ${job.data.to} (ID: ${job.id}, Wait: ${result.waitingTimeMs}ms, SLA Violated: ${result.isSlaViolated})`);
 
     try {
-      if (job.data.campaignId) {
+      const { tenantId, campaignId, slaSeconds } = job.data;
+
+      // 1. 🚀 CƠ CHẾ ĐẾM HẠN NGẠC NGUYÊN TỬ (Ý 3): 
+      // Luôn tăng bộ đếm số lượng email đã gửi trong tháng của Tenant (An toàn đồng thời)
+      if (tenantId) {
+        await Tenant.findByIdAndUpdate(tenantId, {
+          $inc: { 'usage.emailsSentThisMonth': 1 }
+        });
+      }
+
+      // 2. Cập nhật thống kê chiến dịch nếu là mail chiến dịch
+      if (campaignId) {
         const campaign = await Campaign.findByIdAndUpdate(
-          job.data.campaignId,
+          campaignId,
           { $inc: { 'stats.sentCount': 1 } },
           { new: true }
         );
@@ -143,7 +155,7 @@ export const initEmailWorker = (concurrency = 5) => {
         }
       }
     } catch (err) {
-      console.error('❌ Lỗi cập nhật stats chiến dịch:', err.message);
+      console.error('❌ Lỗi cập nhật stats chiến dịch hoặc quota Tenant:', err.message);
     }
   });
 

@@ -1,72 +1,58 @@
-import Template from '../models/Template.js';
-import { success } from '../utils/response.util.js';
+import templateService from '../services/template.service.js';
+import { success, created } from '../utils/response.util.js';
 
 class TemplateController {
-  async getAll(req, res, next) {
+  async create(req, res, next) {
     try {
-      const { category, search } = req.query;
-      const query = { tenantId: req.user.tenantId };
-
-      if (category) query.category = category;
-      if (search) {
-        query.$or = [
-          { name: { $regex: search, $options: 'i' } },
-          { subject: { $regex: search, $options: 'i' } }
-        ];
-      }
-
-      const templates = await Template.find(query).sort({ updatedAt: -1 });
-      return success(res, 'Lấy danh sách mẫu thành công.', templates);
-    } catch (err) {
-      next(err);
+      const template = await templateService.createTemplate(req.user.tenantId, req.body);
+      return created(res, 'Tạo mẫu thư mới thành công.', template);
+    } catch (error) {
+      next(error);
     }
   }
 
-  async create(req, res, next) {
+  async getAll(req, res, next) {
     try {
-      const { name, subject, category, contentHtml, variables } = req.body;
-      const template = await Template.create({
-        tenantId: req.user.tenantId,
-        name,
-        subject,
-        category: category || 'MARKETING',
-        contentHtml,
-        variables: variables || ['firstName', 'email']
-      });
-      return success(res, 'Tạo mẫu tin thành công.', template, 201);
-    } catch (err) {
-      next(err);
+      const result = await templateService.getTemplates(req.user.tenantId, req.query);
+      return success(res, 'Lấy danh sách mẫu thư thành công.', result.data, 200, result.meta);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getById(req, res, next) {
+    try {
+      const template = await templateService.getTemplateById(req.params.id, req.user.tenantId);
+      return success(res, 'Lấy chi tiết mẫu thư thành công.', template);
+    } catch (error) {
+      next(error);
     }
   }
 
   async update(req, res, next) {
     try {
-      const template = await Template.findOneAndUpdate(
-        { _id: req.params.id, tenantId: req.user.tenantId },
-        req.body,
-        { new: true }
-      );
-      if (!template) {
-        return res.status(404).json({ success: false, message: 'Không tìm thấy mẫu tin.' });
-      }
-      return success(res, 'Cập nhật mẫu tin thành công.', template);
-    } catch (err) {
-      next(err);
+      const updated = await templateService.updateTemplate(req.params.id, req.user.tenantId, req.body);
+      return success(res, 'Cập nhật mẫu thư thành công.', updated);
+    } catch (error) {
+      next(error);
     }
   }
 
   async delete(req, res, next) {
     try {
-      const template = await Template.findOneAndDelete({
-        _id: req.params.id,
-        tenantId: req.user.tenantId
-      });
-      if (!template) {
-        return res.status(404).json({ success: false, message: 'Không tìm thấy mẫu tin.' });
-      }
-      return success(res, 'Xóa mẫu tin thành công.');
-    } catch (err) {
-      next(err);
+      await templateService.deleteTemplate(req.params.id, req.user.tenantId);
+      return success(res, 'Đã xóa mẫu thư thành công.');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async clone(req, res, next) {
+    try {
+      const cloned = await templateService.cloneTemplate(req.params.id, req.user.tenantId);
+      return created(res, 'Nhân bản mẫu thư thành công.', cloned);
+    } catch (error) {
+      next(error);
     }
   }
 }

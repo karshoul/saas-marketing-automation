@@ -19,11 +19,34 @@ import Billing from "./pages/Billing";
 import AdminLayout from "./components/layout/AdminLayout";
 import AdminTenants from "./pages/admin/AdminTenants";
 import AdminBenchmark from "./pages/admin/AdminBenchmark";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import Members from "./pages/Members";
 
+// 1. Bảo vệ chung: Phải đăng nhập
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem("token");
   if (!token) {
     return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
+// 2. Bảo vệ cổng Platform Super Admin
+function SuperAdminRoute({ children }) {
+  const token = localStorage.getItem("token");
+  let user = null;
+  try {
+    user = JSON.parse(localStorage.getItem("user") || "{}");
+  } catch {
+    user = {};
+  }
+
+  if (!token) return <Navigate to="/login" replace />;
+  
+  // Kiểm tra cờ superadmin từ tài khoản toàn cầu
+  if (!user.isSuperAdmin) {
+    return <Navigate to="/dashboard" replace />;
   }
   return children;
 }
@@ -54,8 +77,10 @@ function AnimatedRoutes() {
         {/* Auth */}
         <Route path="/login" element={<PageWrapper><Login /></PageWrapper>} />
         <Route path="/register" element={<PageWrapper><Register /></PageWrapper>} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
-        {/* Dashboard Shell */}
+        {/* Dashboard Shell (Tenant / Workspace Portal) */}
         <Route
           element={
             <ProtectedRoute>
@@ -72,14 +97,23 @@ function AnimatedRoutes() {
           <Route path="/analytics" element={<PageWrapper><Analytics /></PageWrapper>} />
           <Route path="/settings" element={<PageWrapper><Settings /></PageWrapper>} />
           <Route path="/billing" element={<PageWrapper><Billing /></PageWrapper>} />
+          <Route path="/members" element={<PageWrapper><Members /></PageWrapper>} />
         </Route>
-        {/* ================= SUPERADMIN PORTAL ================= */}
-<Route path="/admin" element={<AdminLayout />}>
-  <Route index element={<Navigate to="/admin/tenants" replace />} />
-  <Route path="tenants" element={<AdminTenants />} />
-  <Route path="queue-monitor" element={<PageWrapper><QueueMonitor /></PageWrapper>} />
-  <Route path="benchmark" element={<AdminBenchmark />} />
-</Route>
+
+        {/* ================= SUPERADMIN PORTAL (Cấp 1) ================= */}
+        <Route
+          path="/admin"
+          element={
+            <SuperAdminRoute>
+              <AdminLayout />
+            </SuperAdminRoute>
+          }
+        >
+          <Route index element={<Navigate to="/admin/tenants" replace />} />
+          <Route path="tenants" element={<AdminTenants />} />
+          <Route path="queue-monitor" element={<PageWrapper><QueueMonitor /></PageWrapper>} />
+          <Route path="benchmark" element={<AdminBenchmark />} />
+        </Route>
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -1,12 +1,14 @@
 import { Queue, Worker } from 'bullmq';
-import { redisConfig, redis } from '../config/redis.js';
+import { redis } from '../config/redis.js';
 import Campaign from '../models/Campaign.js';
+import Tenant from '../models/Tenant.js';
+import mailService from '../services/mail.service.js';
 
-export const EMAIL_QUEUE_NAME = 'marketing-email-queue';
+export const EMAIL_QUEUE_NAME = 'verdio-email-queue';
 
-// BullMQ tự khởi tạo kết nối riêng với redisConfig có hỗ trợ TLS
+// Khởi tạo hàng đợi kết nối với cụm Redis
 export const emailQueue = new Queue(EMAIL_QUEUE_NAME, {
-  connection: redisConfig,
+  connection: redis,
   defaultJobOptions: {
     attempts: 3,
     backoff: {
@@ -14,30 +16,63 @@ export const emailQueue = new Queue(EMAIL_QUEUE_NAME, {
       delay: 2000
     },
     removeOnComplete: {
-      count: 1000
+      count: 2000
     },
     removeOnFail: false
   }
 });
 
-export const initEmailWorker = (concurrency = 5) => {
+export const getQueueMetrics = async () => {
+  const [waiting, active, completed, failed, delayed] = await Promise.all([
+    emailQueue.getWaitingCount(),
+    emailQueue.getActiveCount(),
+    emailQueue.getCompletedCount(),
+    emailQueue.getFailedCount(),
+    emailQueue.getDelayedCount()
+  ]);
+
+  return {
+    waiting,
+    active,
+    completed,
+    failed,
+    delayed,
+    totalQueued: waiting + active + delayed,
+    queueName: EMAIL_QUEUE_NAME
+  };
+};
+
+export const initEmailWorker = (concurrency = 2) => {
   const worker = new Worker(
     EMAIL_QUEUE_NAME,
     async (job) => {
-      const { to, subject, html, campaignId } = job.data;
+      const { to, subject, html, fromName, campaignId, recipientId, tenantId, isMock, createdAt, slaSeconds } = job.data;
 
-      // Giả lập thời gian gửi email ngầm (200ms)
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      const startTime = Date.now();
+      const waitingTimeMs = startTime - (createdAt ? new Date(createdAt).getTime() : startTime);
+      const isSlaViolated = slaSeconds ? (waitingTimeMs / 1000) > slaSeconds : false;
+
+      let sendResult;
+
+      // Gửi email thực tế qua Resend HTTP REST API
+      if (mailService && typeof mailService.send === 'function' && !isMock) {
+        sendResult = await mailService.send({ to, subject, html, fromName, campaignId, recipientId, tenantId });
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        sendResult = { success: true, mock: true };
+      }
 
       return {
-        success: true,
-        sentTo: to,
+        ...sendResult,
+        to,
         campaignId,
-        sentAt: new Date().toISOString()
+        waitingTimeMs,
+        isSlaViolated,
+        finishedAt: new Date().toISOString()
       };
     },
     {
-      connection: redisConfig, // Dùng redisConfig để worker có kết nối độc lập
+      connection: redis,
       concurrency,
       limiter: {
         max: 50,
@@ -46,32 +81,46 @@ export const initEmailWorker = (concurrency = 5) => {
     }
   );
 
-  // Bật log khi job hoàn thành và cập nhật thống kê vào DB
-  worker.on('completed', async (job) => {
-    console.log(`✉️ [Worker Job Done]: Đã gửi thành công tới -> ${job.data.to} (ID: ${job.id})`);
+  worker.on('completed', async (job, result) => {
+    console.log(`✉️ [Worker Job Done]: ${job.data.to} (ID: ${job.id}, Chờ: ${result.waitingTimeMs}ms)`);
 
     try {
-      if (job.data.campaignId) {
+      const { tenantId, campaignId } = job.data;
+
+      // 1. Tăng bộ đếm Quota nguyên tử cho Tenant
+      if (tenantId) {
+        await Tenant.findByIdAndUpdate(tenantId, {
+          $inc: { 'usage.emailsSentThisMonth': 1 }
+        });
+      }
+
+      // 2. Cập nhật tiến độ Chiến dịch
+      if (campaignId) {
         const campaign = await Campaign.findByIdAndUpdate(
-          job.data.campaignId,
+          campaignId,
           { $inc: { 'stats.sentCount': 1 } },
           { new: true }
         );
 
-        if (campaign && campaign.stats.sentCount >= campaign.stats.totalRecipients) {
-          campaign.status = 'COMPLETED';
-          await campaign.save();
-          console.log(`🎉 [Campaign Finished]: Chiến dịch ${campaign._id} đã hoàn tất toàn bộ tiến trình gửi.`);
+        // 🛠️ SỬA Ở ĐÂY: Dùng điều kiện >= hoặc kiểm tra trạng thái thực tế
+        if (campaign && (campaign.stats.sentCount >= campaign.stats.totalRecipients || campaign.status === 'PROCESSING')) {
+          // Kiểm tra nếu số lượng gửi thực tế đã gần bằng tổng số (sai số tối đa 1-2 mail do contact lỗi)
+          const totalExpected = campaign.stats.totalRecipients || 1;
+          if (campaign.stats.sentCount >= totalExpected) {
+            campaign.status = 'COMPLETED';
+            campaign.sentAt = new Date();
+            await campaign.save();
+            console.log(`🎉 [Campaign Finished]: Chiến dịch "${campaign.name}" đã hoàn tất 100%!`);
+          }
         }
       }
     } catch (err) {
-      console.error('❌ Lỗi cập nhật tiến độ chiến dịch:', err.message);
+      console.error('❌ Lỗi cập nhật số liệu:', err.message);
     }
   });
 
   worker.on('failed', async (job, err) => {
-    console.error(`❌ [Job ${job?.id} Failed]: ${err.message} (Lần thử: ${job?.attemptsMade})`);
-
+    console.error(`❌ [Job ${job?.id} Failed]: ${err.message}`);
     try {
       if (job?.data?.campaignId) {
         await Campaign.findByIdAndUpdate(job.data.campaignId, {
@@ -79,7 +128,7 @@ export const initEmailWorker = (concurrency = 5) => {
         });
       }
     } catch (dbErr) {
-      console.error('❌ Lỗi cập nhật stats thất bại:', dbErr.message);
+      console.error('❌ Lỗi cập nhật thất bại:', dbErr.message);
     }
   });
 

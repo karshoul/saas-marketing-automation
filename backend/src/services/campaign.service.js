@@ -7,6 +7,10 @@ import Tenant from '../models/Tenant.js';
 
 class CampaignService {
   async createCampaign(tenantId, data) {
+    if (!data.name || !data.subject || !data.contentHtml) {
+      throw new ApiError(400, 'Tên chiến dịch, tiêu đề và nội dung email là bắt buộc.');
+    }
+
     return await campaignRepository.create({
       ...data,
       tenantId,
@@ -18,9 +22,9 @@ class CampaignService {
     const { page = 1, limit = 10, status, search } = query;
     const filter = { tenantId };
 
-    if (status) filter.status = status;
-    if (search) {
-      filter.name = { $regex: search, $options: 'i' };
+    if (status && status !== 'ALL') filter.status = status;
+    if (search && search.trim()) {
+      filter.name = { $regex: search.trim(), $options: 'i' };
     }
 
     return await campaignRepository.findAll(filter, { page, limit });
@@ -30,6 +34,28 @@ class CampaignService {
     const campaign = await campaignRepository.findById(id, tenantId);
     if (!campaign) throw new ApiError(404, 'Không tìm thấy chiến dịch.');
     return campaign;
+  }
+
+  async updateCampaign(id, tenantId, updateData) {
+    const campaign = await campaignRepository.findById(id, tenantId);
+    if (!campaign) throw new ApiError(404, 'Không tìm thấy chiến dịch để cập nhật.');
+
+    if (campaign.status === 'PROCESSING' || campaign.status === 'COMPLETED') {
+      throw new ApiError(400, 'Không thể chỉnh sửa chiến dịch đã hoặc đang phát tán.');
+    }
+
+    return await campaignRepository.updateById(id, tenantId, updateData);
+  }
+
+  async deleteCampaign(id, tenantId) {
+    const campaign = await campaignRepository.findById(id, tenantId);
+    if (!campaign) throw new ApiError(404, 'Không tìm thấy chiến dịch để xóa.');
+
+    if (campaign.status === 'PROCESSING') {
+      throw new ApiError(400, 'Không thể xóa chiến dịch đang phát tán.');
+    }
+
+    return await campaignRepository.deleteById(id, tenantId);
   }
 
   /**
@@ -45,12 +71,10 @@ class CampaignService {
       throw new ApiError(400, 'Chiến dịch này đang được xử lý hoặc đã nằm trong hàng đợi.');
     }
 
-    // 1. Lấy thông tin Tenant để xác định gói cước & trọng số ưu tiên P(t)
+    // 1. Xác định gói cước & trọng số ưu tiên SLA P(t)
     const tenant = await Tenant.findById(tenantId).select('plan subscriptionPlan');
     const plan = (tenant?.plan || tenant?.subscriptionPlan || 'FREE').toUpperCase();
 
-    // Thiết lập SLA và trọng số W_tier theo gói cước
-    // FREE: SLA 60s (W=0) | PRO: SLA 15s (W=5) | ENTERPRISE: SLA 5s (W=10)
     const slaConfig = {
       FREE: { slaSeconds: 60, weightTier: 0, priority: 10 },
       PRO: { slaSeconds: 15, weightTier: 5, priority: 5 },
@@ -58,29 +82,39 @@ class CampaignService {
     };
     const tierConfig = slaConfig[plan] || slaConfig.FREE;
 
-    // 2. Lọc danh sách contacts người nhận (chỉ lấy status SUBSCRIBED)
+    // 2. Lọc danh sách người nhận theo Trạng thái, Phân khúc và Thẻ nhãn
     const contactFilter = { tenantId, status: 'SUBSCRIBED' };
+    
+    if (campaign.targetSegment && campaign.targetSegment !== 'ALL') {
+      contactFilter.segment = campaign.targetSegment;
+    }
+
     if (campaign.targetTags && campaign.targetTags.length > 0) {
       contactFilter.tags = { $in: campaign.targetTags };
     }
 
-    const recipients = await Contact.find(contactFilter).select('email firstName lastName');
+    // Lấy đủ trường để cá nhân hóa
+    const recipients = await Contact.find(contactFilter).select('email firstName lastName company');
 
     if (recipients.length === 0) {
       throw new ApiError(400, 'Không tìm thấy khách hàng nào phù hợp với điều kiện để gửi chiến dịch.');
     }
 
-    // 3. Chuyển đổi thành cấu trúc Bulk Jobs cho BullMQ kèm metadata thuật toán P(t)
+    // 3. Chuẩn bị Bulk Jobs cho BullMQ
     const jobs = recipients.map((contact) => {
-      const personalizedHtml = (campaign.contentHtml || '').replace(
-        /{{firstName}}/g,
-        contact.firstName || 'Quý khách'
-      );
+      // Thay thế tất cả các biến động (Merge Tags)
+      let personalizedHtml = (campaign.contentHtml || '')
+        .replace(/{{firstName}}/g, contact.firstName || 'Quý khách')
+        .replace(/{{lastName}}/g, contact.lastName || '')
+        .replace(/{{company}}/g, contact.company || 'Doanh nghiệp')
+        .replace(/{{email}}/g, contact.email)
+        .replace(/{{unsubscribeUrl}}/g, `https://verdio.io/unsubscribe?cid=${campaign._id}&email=${contact.email}`);
 
       return {
         name: `campaign-job-${campaign._id}-${contact._id}`,
         data: {
           to: contact.email,
+          fromName: campaign.fromName || 'VERDIO System',
           subject: campaign.subject,
           html: personalizedHtml,
           tenantId: tenantId.toString(),
@@ -91,7 +125,7 @@ class CampaignService {
         },
         opts: {
           jobId: `campaign-${campaign._id}-contact-${contact._id}`,
-          priority: tierConfig.priority, // BullMQ: số càng nhỏ mức ưu tiên càng cao
+          priority: tierConfig.priority,
           removeOnComplete: true,
           removeOnFail: false
         }
@@ -101,12 +135,12 @@ class CampaignService {
     // 4. Đẩy hàng loạt vào BullMQ
     await emailQueue.addBulk(jobs);
 
-    // 5. Cập nhật số lượng tiêu thụ vào Quota của Tenant (Nguyên tử $inc)
+    // 5. Cập nhật Quota tiêu thụ của Workspace
     await Tenant.findByIdAndUpdate(tenantId, {
       $inc: { 'usage.emailsSentThisMonth': recipients.length }
     });
 
-    // 6. Cập nhật trạng thái và chỉ số chiến dịch
+    // 6. Cập nhật trạng thái chiến dịch
     const updated = await campaignRepository.updateById(id, tenantId, {
       status: 'PROCESSING',
       sentAt: new Date(),
@@ -121,37 +155,35 @@ class CampaignService {
     };
   }
 
-  /**
-   * Theo dõi trạng thái Queue của Chiến dịch Real-time
-   */
   async getCampaignQueueStatus(id, tenantId) {
-  const campaign = await campaignRepository.findById(id, tenantId);
-  if (!campaign) throw new ApiError(404, 'Không tìm thấy chiến dịch.');
+    const campaign = await campaignRepository.findById(id, tenantId);
+    if (!campaign) throw new ApiError(404, 'Không tìm thấy chiến dịch.');
 
-  // Lấy các job còn đang tồn tại trong Redis (nếu chiến dịch đang chạy dở)
-  const waitingJobs = await emailQueue.getJobs(['waiting', 'delayed', 'prioritized']);
-  const activeJobs = await emailQueue.getJobs(['active']);
+    const waitingJobs = await emailQueue.getJobs(['waiting', 'delayed', 'prioritized']);
+    const activeJobs = await emailQueue.getJobs(['active']);
 
-  const waitingCount = waitingJobs.filter(j => j.data?.campaignId === id.toString()).length;
-  const activeCount = activeJobs.filter(j => j.data?.campaignId === id.toString()).length;
+    const waitingCount = waitingJobs.filter(j => j?.data?.campaignId === id.toString()).length;
+    const activeCount = activeJobs.filter(j => j?.data?.campaignId === id.toString()).length;
 
-  // Lấy số liệu bền vững từ DB
-  const totalRecipients = campaign.stats?.totalRecipients || 0;
-  const sentCount = campaign.stats?.sentCount || 0;
-  const failedCount = campaign.stats?.failedCount || 0;
+    const totalRecipients = campaign.stats?.totalRecipients || 0;
+    const sentCount = campaign.stats?.sentCount || 0;
+    const failedCount = campaign.stats?.failedCount || 0;
+    const openedCount = campaign.stats?.openedCount || 0;
+    const clickedCount = campaign.stats?.clickedCount || 0;
 
-  // Nếu trong Redis không còn job nào (đã chạy xong hoặc removeOnComplete), dùng số liệu từ DB
-  const isFinished = campaign.status === 'COMPLETED' || (waitingCount === 0 && activeCount === 0);
+    const isFinished = campaign.status === 'COMPLETED' || (waitingCount === 0 && activeCount === 0 && campaign.status !== 'DRAFT');
 
-  return {
-    waiting: waitingCount,
-    active: activeCount,
-    completed: isFinished ? (sentCount || totalRecipients) : sentCount,
-    failed: failedCount,
-    total: totalRecipients,
-    status: campaign.status
-  };
+    return {
+      waiting: waitingCount,
+      active: activeCount,
+      completed: isFinished ? (sentCount || totalRecipients) : sentCount,
+      failed: failedCount,
+      opened: openedCount,
+      clicked: clickedCount,
+      total: totalRecipients,
+      status: isFinished && campaign.status === 'PROCESSING' ? 'COMPLETED' : campaign.status
+    };
+  }
 }
 
-}
 export default new CampaignService();

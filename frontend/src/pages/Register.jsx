@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import { User, Mail, Lock, Building2, ArrowRight } from "lucide-react";
+import { GoogleLogin } from "@react-oauth/google";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -18,11 +19,42 @@ export default function Register() {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  // Hàm xử lý lưu session & chuyển hướng tập trung
+  const handleAuthSuccess = (resData) => {
+    const token =
+      resData?.accessToken ||
+      resData?.token ||
+      resData?.data?.accessToken ||
+      resData?.data?.token;
+
+    if (!token) {
+      setError("Khởi tạo tài khoản thành công nhưng không trích xuất được phiên truy cập.");
+      return;
+    }
+
+    localStorage.setItem("token", token);
+
+    const userData = resData?.user || resData?.data?.user || resData?.data;
+    if (userData) {
+      localStorage.setItem("user", JSON.stringify(userData));
+    }
+
+    const ws = resData?.tenant || resData?.workspace || resData?.data?.tenant || resData?.data?.workspace;
+    if (ws) {
+      localStorage.setItem("workspaceId", ws._id || ws.id);
+      localStorage.setItem("workspaceName", ws.name || ws.workspaceName || "VERDIO Workspace");
+    } else {
+      localStorage.setItem("workspaceName", "VERDIO Workspace");
+    }
+
+    navigate("/dashboard");
+  };
+
+  // 1. Đăng ký thông thường qua Form
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
-    // Kiểm tra nhanh phía client theo đúng Zod schema
     if (formData.fullName.trim().length < 3) {
       setError("Họ và tên phải có ít nhất 3 ký tự.");
       return;
@@ -48,11 +80,7 @@ export default function Register() {
 
     try {
       const res = await api.post("/auth/register", payload);
-      const token = res.data?.token || res.data?.data?.token;
-      if (token) {
-        localStorage.setItem("token", token);
-      }
-      navigate("/dashboard");
+      handleAuthSuccess(res.data);
     } catch (err) {
       const resData = err.response?.data;
       const msg =
@@ -61,6 +89,24 @@ export default function Register() {
         resData?.message ||
         "Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.";
       setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 2. Đăng ký nhanh qua Google OAuth
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setError("");
+    setLoading(true);
+    try {
+      const res = await api.post("/auth/google", {
+        credential: credentialResponse.credential
+      });
+      handleAuthSuccess(res.data);
+    } catch (err) {
+      console.error("💥 [LỖI GOOGLE SIGN-UP]:", err);
+      const resData = err.response?.data;
+      setError(resData?.message || "Đăng ký bằng Google thất bại. Vui lòng thử lại.");
     } finally {
       setLoading(false);
     }
@@ -91,6 +137,25 @@ export default function Register() {
             <span>⚠</span> <span>{error}</span>
           </div>
         )}
+
+        {/* Nút Đăng ký nhanh bằng Google */}
+        <div className="mb-5 flex justify-center w-full">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() => setError("Đăng ký Google không thành công trên trình duyệt.")}
+            theme="filled_black"
+            shape="pill"
+            width="384px"
+            text="signup_with"
+          />
+        </div>
+
+        <div className="relative flex items-center justify-center mb-5">
+          <div className="border-t border-white/10 w-full" />
+          <span className="bg-[#0f172a] px-3 text-[11px] text-[#64748b] uppercase tracking-wider absolute">
+            hoặc đăng ký bằng email
+          </span>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

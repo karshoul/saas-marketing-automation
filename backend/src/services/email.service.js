@@ -1,104 +1,155 @@
+import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
-import { env } from '../config/env.js';
 
 class EmailService {
   constructor() {
-    this.resend = new Resend(process.env.RESEND_API_KEY);
-    // Khi chưa verify domain riêng, BẮT BỘC dùng sender mặc định này của Resend
-    this.fromEmail = 'VERDIO <onboarding@resend.dev>';
+    // 1. Khởi tạo Resend Client (nếu có key)
+    this.resendClient = process.env.RESEND_API_KEY
+      ? new Resend(process.env.RESEND_API_KEY)
+      : null;
+
+    // 2. Cấu hình cổng và giao thức bảo mật SMTP
+    const smtpPort = Number(process.env.SMTP_PORT) || 465;
+    const isSecure = process.env.SMTP_SECURE
+      ? process.env.SMTP_SECURE === 'true'
+      : smtpPort === 465;
+
+    // 3. Khởi tạo Nodemailer Connection Pool
+    this.transporter = nodemailer.createTransport({
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: smtpPort,
+      secure: isSecure,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      }
+    });
+
+    this.fromEmail = process.env.EMAIL_FROM || process.env.SMTP_USER || 'khuongmingo@gmail.com';
   }
 
   /**
-   * Gửi email chứa link đặt lại mật khẩu khẩn cấp
+   * Phát tán email (Tự động điều phối giữa Gmail SMTP và Resend API)
+   */
+  async send({ to, subject, html, fromName }) {
+    const senderDisplay = `"${fromName || 'VERDIO System'}" <${this.fromEmail}>`;
+    const isGmailAddress = this.fromEmail.toLowerCase().includes('@gmail.com');
+
+    // 👉 TRƯỜNG HỢP 1: Gửi từ Gmail (@gmail.com) -> BẮT BUỘC dùng Nodemailer SMTP Pool
+    // Resend cấm tuyệt đối việc mạo danh đuôi @gmail.com
+    if (isGmailAddress || !this.resendClient) {
+      const mailOptions = {
+        from: senderDisplay,
+        to,
+        subject,
+        html
+      };
+
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log(`✉️ [Gmail SMTP Real Dispatched]: Message ID: ${info.messageId} -> ${to}`);
+      return {
+        success: true,
+        messageId: info.messageId,
+        provider: 'NODEMAILER_GMAIL_SMTP'
+      };
+    }
+
+    // 👉 TRƯỜNG HỢP 2: Tên miền riêng doanh nghiệp -> Chạy qua Resend HTTP REST API
+    try {
+      const { data, error } = await this.resendClient.emails.send({
+        from: senderDisplay,
+        to: [to],
+        subject,
+        html
+      });
+
+      if (error) throw new Error(error.message);
+
+      return {
+        success: true,
+        messageId: data.id,
+        provider: 'RESEND'
+      };
+    } catch (resendErr) {
+      console.warn(`⚠️ [Resend Failed]: ${resendErr.message}. Tự động chuyển hướng sang Gmail SMTP dự phòng...`);
+
+      // Fallback an toàn: Nếu Resend lỗi, tự động dùng Nodemailer gửi tiếp
+      const info = await this.transporter.sendMail({
+        from: `"${fromName || 'VERDIO System'}" <${process.env.SMTP_USER}>`,
+        to,
+        subject,
+        html
+      });
+
+      return {
+        success: true,
+        messageId: info.messageId,
+        provider: 'FALLBACK_NODEMAILER'
+      };
+    }
+  }
+
+  /**
+   * Gửi email khôi phục mật khẩu tài khoản
    */
   async sendPasswordResetEmail({ email, name, token }) {
-    // Tạo đường dẫn Reset Password hướng về giao diện Frontend
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${token}`;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
 
-    try {
-      const data = await this.resend.emails.send({
-        from: this.fromEmail,
-        to: [email],
-        subject: '🔒 [VERDIO] Yêu cầu đặt lại mật khẩu tài khoản',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-            <h2 style="color: #1a365d; text-align: center;">Khôi phục Mật khẩu VERDIO</h2>
-            <p>Xin chào <strong>${name}</strong>,</p>
-            <p>Chúng tôi đã nhận được yêu cầu đặt lại mật khẩu cho tài khoản liên kết với hòm thư này.</p>
-            <p>Vui lòng nhấn vào nút bên dưới để tiến hành thiết lập mật khẩu mới (Liên kết có hiệu lực trong <strong>15 phút</strong>):</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${resetUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Đặt Lại Mật Khẩu</a>
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0b1329; margin: 0; padding: 20px; }
+          .email-container { max-width: 560px; margin: 20px auto; background: #0f172a; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b; color: #f8fafc; }
+          .header { background: #020617; padding: 24px; text-align: center; border-bottom: 1px solid #1e293b; }
+          .header h1 { color: #38bdf8; margin: 0; font-size: 18px; letter-spacing: 2px; font-weight: 800; }
+          .content { padding: 32px; color: #cbd5e1; line-height: 1.6; font-size: 14px; }
+          .btn-container { text-align: center; margin: 30px 0; }
+          .btn { background: linear-gradient(135deg, #6366f1, #38bdf8); color: #ffffff !important; padding: 12px 28px; text-decoration: none; border-radius: 10px; font-weight: bold; display: inline-block; box-shadow: 0 4px 15px rgba(99,102,241,0.4); }
+          .footer { background: #020617; padding: 20px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1e293b; }
+        </style>
+      </head>
+      <body>
+        <div class="email-container">
+          <div class="header">
+            <h1>VERDIO // SECURITY</h1>
+          </div>
+          <div class="content">
+            <p>Xin chào <strong>${name || 'Quý khách'}</strong>,</p>
+            <p>Hệ thống nhận được yêu cầu thiết lập lại mật khẩu tài khoản VERDIO.</p>
+            <p>Vui lòng bấm vào nút bên dưới để tiến hành đặt mật khẩu mới (Hiệu lực trong <strong>15 phút</strong>):</p>
+            <div class="btn-container">
+              <a href="${resetUrl}" class="btn" target="_blank">Đặt Lại Mật Khẩu Ngay →</a>
             </div>
-            <p style="color: #6b7280; font-size: 13px;">Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này hoặc liên hệ với bộ phận hỗ trợ để bảo đảm an toàn.</p>
-            <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;" />
-            <p style="color: #9ca3af; font-size: 11px; text-align: center;">Đây là email tự động, vui lòng không phản hồi trực tiếp thư này.</p>
+            <p style="font-size: 12px; color: #64748b;">
+              Hoặc mở đường dẫn này:<br>
+              <a href="${resetUrl}" style="color: #38bdf8; word-break: break-all;">${resetUrl}</a>
+            </p>
           </div>
-        `
-      });
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} VERDIO SaaS Engine. Thư gửi tự động từ hệ thống.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
 
-      console.log(`✉️ [Email Service]: Đã gửi thành công mail reset password tới ${email}. Message ID: ${data.id}`);
-      return data;
-    } catch (error) {
-      console.error(`❌ [Email Service Error]: Lỗi khi gửi mail qua Resend tới ${email}:`, error.message);
-      // Không throw error ra ngoài làm bẻ gãy main execution flow
-    }
+    return await this.send({
+      to: email,
+      subject: '🔒 [VERDIO] Yêu cầu thiết lập lại mật khẩu tài khoản',
+      html: htmlContent,
+      fromName: 'VERDIO Security'
+    });
   }
 
-  /**
-   * Phát tán email kích hoạt tài khoản
-   */
- async sendVerificationEmail({ email, name, token }) {
-    const verifyUrl = `http://localhost:5000/api/auth/verify-email?token=${token}`;
-
-    try {
-      const apiKey = process.env.RESEND_API_KEY;
-
-      // Nếu không có API Key hợp lệ -> In link verify ra Terminal để test ngay ở Dev Mode
-      if (!apiKey || apiKey.startsWith('re_123456')) {
-        console.log(`\n==================================================`);
-        console.log(`⚠️ [DEV MODE] Link kích hoạt cho <${email}>:`);
-        console.log(`👉 ${verifyUrl}`);
-        console.log(`==================================================\n`);
-        return;
-      }
-
-      const { data, error } = await this.resend.emails.send({
-        from: this.fromEmail,
-        to: [email],
-        subject: '🔑 [VERDIO] Kích hoạt tài khoản Workspace của bạn',
-        html: `
-          <div style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2>Xin chào ${name},</h2>
-            <p>Cảm ơn bạn đã đăng ký tài khoản tại VERDIO.</p>
-            <p>Vui lòng nhấn vào nút bên dưới để kích hoạt tài khoản của bạn:</p>
-            <a href="${verifyUrl}" style="background-color: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Kích Hoạt Tài Khoản</a>
-            <p style="margin-top: 15px; color: #666;">Hoặc copy đường link này vào trình duyệt: <br>${verifyUrl}</p>
-          </div>
-        `
-      });
-
-      if (error) {
-        console.error(`❌ [Resend Error]:`, error.message);
-        console.log(`👉 Link kích hoạt dự phòng (Dev): ${verifyUrl}`);
-        return;
-      }
-
-      console.log(`✉️ [Resend Success]: Đã gửi mail kích hoạt tới ${email}. ID: ${data?.id}`);
-      return data;
-    } catch (err) {
-      console.error(`❌ [Email Service Exception]:`, err.message);
-      console.log(`👉 Link kích hoạt dự phòng (Dev): ${verifyUrl}`);
-    }
-  }
-
-  /**
-   * Phát tán email khôi phục mật khẩu
-   */
-  async sendResetPasswordEmail({ email, name, token }) {
-    const resetLink = `${env.app.frontendUrl}/reset-password?token=${token}`;
-    console.log(`✉️ [Email Service Background]: Gửi mail khôi phục mật khẩu đến <${email}>`);
-    console.log(`🔗 Link đặt lại mật khẩu (Hết hạn sau 15p): ${resetLink}`);
-    return true;
+  async sendResetPasswordEmail(params) {
+    return this.sendPasswordResetEmail(params);
   }
 }
 

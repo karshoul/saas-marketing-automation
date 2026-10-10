@@ -18,27 +18,29 @@ const templateSchema = new mongoose.Schema(
       required: true,
       trim: true
     },
-    category: {
+    previewText: {
       type: String,
-      enum: ['TRANSACTIONAL', 'MARKETING', 'ONBOARDING', 'SYSTEM'],
-      default: 'MARKETING'
+      trim: true,
+      default: ''
     },
-    contentHtml: {
+    htmlContent: {
       type: String,
       required: true
     },
-    variables: [
-      {
-        type: String,
-        trim: true
-      }
-    ]
+    category: {
+      type: String,
+      enum: ['MARKETING', 'NEWSLETTER', 'ONBOARDING', 'TRANSACTIONAL', 'OTHER'],
+      default: 'MARKETING'
+    },
+    thumbnail: {
+      type: String,
+      default: ''
+    }
   },
-  {
-    timestamps: true
-  }
+  { timestamps: true }
 );
 
 templateSchema.index({ tenantId: 1, name: 1 });
+templateSchema.index({ tenantId: 1, category: 1 });
 
 export default mongoose.model('Template', templateSchema);

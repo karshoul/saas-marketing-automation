@@ -1,8 +1,7 @@
 import campaignService from '../services/campaign.service.js';
-import { success } from '../utils/response.util.js';
+import { success, created } from '../utils/response.util.js';
 import Campaign from '../models/Campaign.js';
 
-// Ảnh GIF 1x1 pixel trong suốt dùng cho Tracking Pixel
 const TRANSPARENT_GIF = Buffer.from(
   'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
   'base64'
@@ -12,7 +11,7 @@ class CampaignController {
   async create(req, res, next) {
     try {
       const campaign = await campaignService.createCampaign(req.user.tenantId, req.body);
-      return success(res, 'Tạo chiến dịch mới thành công.', campaign, 201);
+      return created(res, 'Tạo chiến dịch mới thành công.', campaign);
     } catch (error) {
       next(error);
     }
@@ -36,6 +35,24 @@ class CampaignController {
     }
   }
 
+  async update(req, res, next) {
+    try {
+      const updated = await campaignService.updateCampaign(req.params.id, req.user.tenantId, req.body);
+      return success(res, 'Cập nhật chiến dịch thành công.', updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async delete(req, res, next) {
+    try {
+      await campaignService.deleteCampaign(req.params.id, req.user.tenantId);
+      return success(res, 'Xóa chiến dịch thành công.');
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async trigger(req, res, next) {
     try {
       const result = await campaignService.triggerCampaign(req.params.id, req.user.tenantId);
@@ -54,13 +71,6 @@ class CampaignController {
     }
   }
 
-  // ==========================================
-  // 📊 PUBLIC TRACKING CONTROLLERS
-  // ==========================================
-
-  /**
-   * Xử lý Tracking Pixel khi người nhận mở email
-   */
   async trackOpen(req, res) {
     try {
       const { cid } = req.query;
@@ -69,24 +79,18 @@ class CampaignController {
           $inc: { 'stats.openedCount': 1 }
         });
       }
-    } catch (err) {
-      // Bỏ qua lỗi để không làm hỏng trải nghiệm đọc thư của người dùng
-    }
+    } catch (err) {}
 
-    // Luôn trả về ảnh GIF 1x1 và vô hiệu hóa cache
     res.writeHead(200, {
       'Content-Type': 'image/gif',
       'Content-Length': TRANSPARENT_GIF.length,
-      'Cache-Control': 'no-store, no-cache, must-revalidate, private, post-check=0, pre-check=0',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private',
       'Pragma': 'no-cache',
       'Expires': '0'
     });
     return res.end(TRANSPARENT_GIF);
   }
 
-  /**
-   * Xử lý đếm lượt click và redirect người nhận tới liên kết gốc
-   */
   async trackClick(req, res) {
     const { cid, url } = req.query;
     try {
@@ -95,11 +99,8 @@ class CampaignController {
           $inc: { 'stats.clickedCount': 1 }
         });
       }
-    } catch (err) {
-      // Bỏ qua lỗi
-    }
+    } catch (err) {}
 
-    // Redirect tới URL gốc
     const targetUrl = url ? decodeURIComponent(url) : 'https://google.com';
     return res.redirect(302, targetUrl);
   }

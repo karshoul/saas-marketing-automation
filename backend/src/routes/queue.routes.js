@@ -17,7 +17,7 @@ router.get('/stats', async (req, res, next) => {
       workerScaler.getMetrics()
     ]);
 
-    // Lấy 15 jobs mới nhất trong trạng thái waiting/active để inspect điểm P(t)
+    // Lấy các jobs trong trạng thái waiting/prioritized/active để inspect
     const [waitingJobs, activeJobs] = await Promise.all([
       emailQueue.getJobs(['waiting', 'prioritized'], 0, 10, true),
       emailQueue.getJobs(['active'], 0, 5, true)
@@ -28,7 +28,8 @@ router.get('/stats', async (req, res, next) => {
       name: job.name,
       to: job.data?.to,
       campaignId: job.data?.campaignId,
-      priority: job.opts?.priority || 1,
+      // Lấy chính xác priority từ opts hoặc mặc định bằng 1 nếu không truyền
+      priority: job.opts?.priority || job.data?.priority || 1,
       slaSeconds: job.data?.slaSeconds || 60,
       createdAt: job.timestamp,
       attemptsMade: job.attemptsMade,

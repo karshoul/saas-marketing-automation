@@ -13,12 +13,15 @@ export const globalErrorHandler = (err, req, res, next) => {
     message = env.nodeEnv === 'production' ? 'Lỗi hệ thống nội bộ' : err.message;
   }
 
-  // 2. Ghi logs vết lỗi ra Console của Server phục vụ kiểm soát, sửa lỗi (Debug)
+  // 🔥 LUÔN IN TOÀN BỘ CHI TIẾT LỖI RA TERMINAL ĐỂ GỠ LỖI (Bỏ chặn điều kiện env)
+  console.error('🔥 [DEBUG - LỖI GỐC CHI TIẾT]:', err);
+
+  // 2. Ghi logs vết lỗi ra Console của Server
   console.error(`💥 [API Error Log]: [${req.method}] ${req.path} | Status: ${statusCode} | Message: ${message}`);
-  if (err.stack && env.nodeEnv === 'development') {
-    console.error(err.stack); // In Stack Trace chi tiết ở môi trường Local
+  if (err.stack) {
+    console.error(err.stack);
   }
 
-  // 3. Chuẩn hóa cấu trúc và trả về Payload JSON đồng bộ qua response.util
+  // 3. Chuẩn hóa cấu trúc và trả về Payload JSON đồng bộ
   return errorResponse(res, statusCode, message, errors);
 };

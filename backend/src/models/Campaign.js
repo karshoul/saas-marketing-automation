@@ -8,10 +8,20 @@ const campaignSchema = new mongoose.Schema(
       required: true,
       index: true
     },
+    templateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Template',
+      default: null
+    },
     name: {
       type: String,
       required: true,
       trim: true
+    },
+    fromName: {
+      type: String,
+      trim: true,
+      default: ''
     },
     subject: {
       type: String,
@@ -22,6 +32,11 @@ const campaignSchema = new mongoose.Schema(
       type: String,
       required: true
     },
+    targetSegment: {
+      type: String,
+      enum: ['ALL', 'VIP', 'ENTERPRISE', 'LEADS', 'CUSTOMERS'],
+      default: 'ALL'
+    },
     targetTags: [
       {
         type: String,
@@ -31,7 +46,8 @@ const campaignSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ['DRAFT', 'QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED'],
-      default: 'DRAFT'
+      default: 'DRAFT',
+      index: true
     },
     scheduledAt: {
       type: Date,
@@ -44,7 +60,9 @@ const campaignSchema = new mongoose.Schema(
     stats: {
       totalRecipients: { type: Number, default: 0 },
       sentCount: { type: Number, default: 0 },
-      failedCount: { type: Number, default: 0 }
+      failedCount: { type: Number, default: 0 },
+      openedCount: { type: Number, default: 0 }, // 👈 Đã bổ sung để lưu lượt mở
+      clickedCount: { type: Number, default: 0 }  // 👈 Đã bổ sung để lưu lượt click
     }
   },
   {

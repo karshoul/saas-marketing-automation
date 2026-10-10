@@ -18,22 +18,25 @@ class ContactRepository {
   }
 
   async findAll(filter = {}, { page = 1, limit = 10, sort = { createdAt: -1 } } = {}) {
-    const skip = (page - 1) * limit;
-    const [data, total] = await Promise.all([
-      Contact.find(filter).sort(sort).skip(skip).limit(limit),
-      Contact.countDocuments(filter)
-    ]);
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+  const skip = (pageNum - 1) * limitNum;
 
-    return {
-      data,
-      meta: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        totalPages: Math.ceil(total / limit)
-      }
-    };
-  }
+  const [data, total] = await Promise.all([
+    Contact.find(filter).sort(sort).skip(skip).limit(limitNum),
+    Contact.countDocuments(filter)
+  ]);
+
+  return {
+    data,
+    meta: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages: Math.ceil(total / limitNum)
+    }
+  };
+}
 
   async updateById(id, tenantId, updateData, options = {}) {
     return await Contact.findOneAndUpdate(
@@ -52,28 +55,36 @@ class ContactRepository {
   }
 
   async bulkUpsert(contacts, tenantId) {
-    if (!contacts || contacts.length === 0) return { insertedCount: 0, matchedCount: 0 };
+  if (!contacts || contacts.length === 0) return { insertedCount: 0, matchedCount: 0 };
 
-    const bulkOps = contacts.map((item) => ({
-      updateOne: {
-        filter: { email: item.email.toLowerCase(), tenantId },
-        update: {
-          $set: {
-            firstName: item.firstName || '',
-            lastName: item.lastName || '',
-            phone: item.phone || '',
-            status: item.status || 'SUBSCRIBED'
-          },
-          $addToSet: {
-            tags: { $each: item.tags || [] }
-          }
+  // Lọc chỉ lấy các contact có email hợp lệ
+  const validContacts = contacts.filter(item => item && item.email);
+
+  const bulkOps = validContacts.map((item) => ({
+    updateOne: {
+      filter: { email: item.email.trim().toLowerCase(), tenantId },
+      update: {
+        $set: {
+          firstName: item.firstName || '',
+          lastName: item.lastName || '',
+          phone: item.phone || '',
+          company: item.company || '',
+          title: item.title || '',
+          country: item.country || 'Vietnam',
+          segment: item.segment || 'LEADS',
+          status: item.status || 'SUBSCRIBED'
         },
-        upsert: true
-      }
-    }));
+        $addToSet: {
+          tags: { $each: item.tags || [] }
+        }
+      },
+      upsert: true
+    }
+  }));
 
-    return await Contact.bulkWrite(bulkOps);
-  }
+  if (bulkOps.length === 0) return { insertedCount: 0, matchedCount: 0 };
+  return await Contact.bulkWrite(bulkOps);
+}
 }
 
 export default new ContactRepository();

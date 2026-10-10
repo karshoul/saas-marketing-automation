@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import { Lock, Mail, ArrowRight, ShieldCheck, Zap } from "lucide-react";
+import { GoogleLogin } from "@react-oauth/google";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -13,94 +14,105 @@ export default function Login() {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleSubmit = async (e) => {
-  if (e && e.preventDefault) e.preventDefault();
-  setError("");
-  setLoading(true);
-
-  console.log("🚀 [1] Đang gửi payload đăng nhập:", {
-    email: formData.email.trim().toLowerCase(),
-    password: formData.password
-  });
-
-  try {
-    const res = await api.post("/auth/login", {
-      email: formData.email.trim().toLowerCase(),
-      password: formData.password
-    });
-
-    console.log("✅ [2] Response từ Backend:", res.data);
-
-    // Quét tìm token ở mọi vị trí có thể có
-    const token = 
-      res.data?.token || 
-      res.data?.accessToken || 
-      res.data?.data?.token || 
-      res.data?.data?.accessToken ||
-      res.data?.result?.token;
-
-    console.log("🔑 [3] Token trích xuất được:", token);
+  // Hàm xử lý lưu session & phân luồng điều hướng tập trung cho cả Login thường & Google OAuth
+  const handleAuthSuccess = (resData) => {
+    const token =
+      resData?.accessToken ||
+      resData?.token ||
+      resData?.data?.accessToken ||
+      resData?.data?.token;
 
     if (!token) {
-      setError("Đăng nhập thành công nhưng Backend không trả về token hợp lệ! Hãy kiểm tra console F12.");
-      setLoading(false);
+      setError("Đăng nhập thành công nhưng hệ thống không trả về Token hợp lệ.");
       return;
     }
 
-    // 1. Lưu token chuẩn
     localStorage.setItem("token", token);
 
-    // 2. Lưu User & Workspace
-    const userData = res.data?.user || res.data?.data?.user || res.data?.data;
+    const userData = resData?.user || resData?.data?.user || resData?.data;
     if (userData) {
       localStorage.setItem("user", JSON.stringify(userData));
     }
 
-    const ws = res.data?.workspace || res.data?.data?.workspace || userData?.workspaces?.[0];
-    if (ws) {
-      localStorage.setItem("workspaceId", ws._id || ws.id);
-      localStorage.setItem("workspaceName", ws.name || ws.workspaceName || "VERDIO Workspace");
+    // 🔥 Xử lý Workspace thông minh: Ưu tiên danh sách workspaces, nếu không có lấy tenant đơn lẻ
+    const workspaces = resData?.workspaces || resData?.data?.workspaces || userData?.workspaces || [];
+    const ownedWorkspace = workspaces.find(w => w.role === "OWNER" || w.isOwner);
+    const primaryTenant = resData?.tenant || resData?.data?.tenant || resData?.workspace || resData?.data?.workspace;
+    
+    const defaultWs = ownedWorkspace || primaryTenant || workspaces[0];
+
+    if (defaultWs) {
+      localStorage.setItem("workspaceId", defaultWs._id || defaultWs.id);
+      localStorage.setItem("workspaceName", defaultWs.name || defaultWs.workspaceName || "VERDIO Workspace");
     } else {
+      // Nếu không có thông tin workspace cụ thể, xóa sạch ID cũ để Backend tự trỏ về workspace gốc của Owner
+      localStorage.removeItem("workspaceId");
       localStorage.setItem("workspaceName", "VERDIO Workspace");
     }
 
-    // 3. Phân luồng điều hướng theo Role chuẩn xác
-    const role = (userData?.role || "").toUpperCase();
-    const email = (userData?.email || formData.email).toLowerCase();
+    // Xóa sạch bộ nhớ tạm chuyển workspace cũ nếu có để tránh bị lệch quyền
+    localStorage.removeItem("activeWorkspaceOverride");
 
-    const isSuperAdmin =
-      role === "SUPERADMIN" ||
-      email === "khuongnguyenbevis@gmail.com" ||
-      email.endsWith("@verdio.io");
+    // Lấy cờ isSuperAdmin trực tiếp từ User model của Backend
+    const isSuperAdmin = Boolean(userData?.isSuperAdmin);
 
-    console.log("🚀 [4] Phân quyền đăng nhập:", { role, email, isSuperAdmin });
-
+    // Điều hướng phân quyền 3 cấp / Cổng quản trị
     if (isSuperAdmin) {
-      console.log("👑 Điều hướng về SuperAdmin Portal...");
       window.location.href = "/admin/tenants";
     } else {
-      console.log("🏢 Điều hướng về Tenant Dashboard...");
       window.location.href = "/dashboard";
     }
+  };
 
-  } catch (err) {
-    console.error("💥 [LỖI ĐĂNG NHẬP]:", err);
-    console.error("Chi tiết response lỗi:", err.response?.data);
+  // 1. Đăng nhập Email + Mật khẩu thông thường
+  const handleSubmit = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setError("");
+    setLoading(true);
 
-    const resData = err.response?.data;
-    const msg =
-      resData?.message ||
-      resData?.error ||
-      resData?.errors?.[0]?.message ||
-      (err.message === "Network Error" 
-        ? "Không thể kết nối đến Backend (Kiểm tra backend đã chạy ở port 5000 chưa, hoặc lỗi CORS)." 
-        : "Email hoặc mật khẩu không chính xác.");
+    try {
+      const res = await api.post("/auth/login", {
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password
+      });
 
-    setError(msg);
-  } finally {
-    setLoading(false);
-  }
-};
+      handleAuthSuccess(res.data);
+    } catch (err) {
+      console.error("💥 [LỖI ĐĂNG NHẬP]:", err);
+      const resData = err.response?.data;
+      const msg =
+        resData?.message ||
+        resData?.error ||
+        resData?.errors?.[0]?.message ||
+        (err.message === "Network Error"
+          ? "Không thể kết nối đến Backend (Kiểm tra server hoặc CORS)."
+          : "Email hoặc mật khẩu không chính xác.");
+
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 2. Đăng nhập qua Google OAuth
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await api.post("/auth/google", {
+        credential: credentialResponse.credential
+      });
+
+      handleAuthSuccess(res.data);
+    } catch (err) {
+      console.error("💥 [LỖI GOOGLE AUTH]:", err);
+      const resData = err.response?.data;
+      setError(resData?.message || "Đăng nhập Google thất bại. Vui lòng thử lại.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen w-full bg-[#020617] text-[#f8fafc] flex flex-col justify-center items-center px-4 relative overflow-hidden font-sans">
@@ -128,6 +140,25 @@ export default function Login() {
           </div>
         )}
 
+        {/* Nút Đăng nhập Google */}
+        <div className="mb-5 flex justify-center w-full">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() => setError("Đăng nhập Google bị hủy hoặc thất bại.")}
+            theme="filled_black"
+            shape="pill"
+            width="384px"
+            text="signin_with"
+          />
+        </div>
+
+        <div className="relative flex items-center justify-center mb-5">
+          <div className="border-t border-white/10 w-full" />
+          <span className="bg-[#0f172a] px-3 text-[11px] text-[#64748b] uppercase tracking-wider absolute">
+            hoặc với email
+          </span>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-[#cbd5e1] uppercase tracking-wider mb-2">Email</label>
@@ -147,8 +178,15 @@ export default function Login() {
 
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label className="text-xs font-semibold text-[#cbd5e1] uppercase tracking-wider">Mật Khẩu</label>
-              <a href="#" className="text-xs text-[#38bdf8] hover:underline">Quên mật khẩu?</a>
+              <label className="text-xs font-semibold text-[#cbd5e1] uppercase tracking-wider">
+                MẬT KHẨU
+              </label>
+              <Link 
+                to="/forgot-password" 
+                className="text-xs text-[#38bdf8] hover:underline"
+              >
+                Quên mật khẩu?
+              </Link>
             </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-[#94a3b8] absolute left-3.5 top-1/2 -translate-y-1/2" />

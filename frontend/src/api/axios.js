@@ -8,11 +8,14 @@ const api = axios.create({
   },
 });
 
-// Tự động gắn Token & Workspace ID vào mọi request gửi lên BE
+// Tự động gắn Token & Workspace ID vào mọi request gửi lên BE kèm log theo dõi
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
     const workspaceId = localStorage.getItem("workspaceId");
+
+    console.log(`🌐 [AXIOS REQUEST] ---> ${config.method.toUpperCase()} ${config.url}`);
+    console.log(`   - Gửi kèm Header x-workspace-id:`, workspaceId);
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -30,6 +33,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      console.warn("⚠️ [AXIOS 401]: Phiên làm việc hết hạn, đang xóa bộ nhớ đệm...");
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       localStorage.removeItem("workspaceId");

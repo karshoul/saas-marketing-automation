@@ -2,7 +2,12 @@ import User from '../models/User.js';
 
 class UserRepository {
   async create(userData, options = {}) {
-    return await User.create(userData, options);
+    // 🔥 Sửa lại để tương thích hoàn toàn với ACID Transaction Session
+    if (Array.isArray(userData)) {
+      return await User.create(userData, options);
+    }
+    const userDoc = new User(userData);
+    return await userDoc.save(options);
   }
 
   async findByEmail(email) {
