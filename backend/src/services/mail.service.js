@@ -14,21 +14,25 @@ class MailService {
     this.cleanFromEmail = extractedEmail ? extractedEmail[1].trim() : rawFrom.replace(/["']/g, '').trim();
 
     // 3. Khởi tạo kết nối Gmail SMTP Pool
-    const smtpPort = Number(process.env.SMTP_PORT) || 465;
-    const isSecure = process.env.SMTP_SECURE === 'true' || smtpPort === 465;
+    // Đổi cấu hình sang cổng 587 và tắt secure mặc định để dùng STARTTLS
+const smtpPort = Number(process.env.SMTP_PORT) || 587;
+const isSecure = process.env.SMTP_SECURE === 'true'; // Cổng 587 bắt buộc secure = false
 
-    this.transporter = nodemailer.createTransport({
-      pool: true,
-      maxConnections: 5,
-      maxMessages: 100,
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: smtpPort,
-      secure: isSecure,
-      auth: {
-        user: process.env.SMTP_USER || 'khuongmingo@gmail.com',
-        pass: process.env.SMTP_PASS || 'dtcdypasfxzmfvcl'
-      }
-    });
+this.transporter = nodemailer.createTransport({
+  pool: true,
+  maxConnections: 5,
+  maxMessages: 100,
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: smtpPort,
+  secure: isSecure, // false cho cổng 587
+  auth: {
+    user: process.env.SMTP_USER || 'khuongmingo@gmail.com',
+    pass: process.env.SMTP_PASS || 'dtcdypasfxzmfvcl'
+  },
+  tls: {
+    rejectUnauthorized: false // Bỏ qua lỗi bắt tay TLS trên hạ tầng proxy Render
+  }
+});
   }
 
   /**
