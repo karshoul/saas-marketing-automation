@@ -1,7 +1,7 @@
 import automationRepository from '../repositories/automation.repository.js';
 import AutomationExecution from '../models/AutomationExecution.js';
 import Automation from '../models/Automation.js';
-import { automationQueue } from '../queues/automation.worker.js';
+import { automationQueue } from '../queues/automation.queue.js';
 import ApiError from '../utils/apiError.util.js';
 
 class AutomationService {
