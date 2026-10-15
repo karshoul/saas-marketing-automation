@@ -2,13 +2,14 @@ import mongoose from 'mongoose';
 import Contact from '../models/Contact.js';
 import Automation from '../models/Automation.js';
 import AutomationExecution from '../models/AutomationExecution.js';
+import Tenant from '../models/Tenant.js'; // 👈 Đã bổ sung import Tenant
 import { automationQueue } from '../queues/automation.queue.js';
 import contactRepository from '../repositories/contact.repository.js';
 import ApiError from '../utils/apiError.util.js';
 
 class ContactService {
   /**
-   * Kích hoạt các Automation đang ACTIVE
+   * Kích hoạt các Automation đang ACTIVE khi có Contact mới được tạo
    */
   async triggerContactCreatedAutomations(tenantId, contact) {
     try {
@@ -26,7 +27,7 @@ class ContactService {
         return trigType === 'CONTACT_CREATED';
       });
 
-      console.log(`[AUTOMATION HOOK] Tìm thấy ${matchingAutomations.length} kịch bản ACTIVE cho contact: ${contact.email}`);
+      console.log(`🤖 [AUTOMATION HOOK] Tìm thấy ${matchingAutomations.length} kịch bản ACTIVE cho contact: ${contact.email}`);
 
       for (const auto of matchingAutomations) {
         if (!auto.steps || auto.steps.length === 0) continue;
@@ -50,10 +51,10 @@ class ContactService {
           executionId: execution._id.toString()
         });
 
-        console.log(`[AUTOMATION HOOK] Đã đưa contact ${contact.email} vào kịch bản: ${auto.name}`);
+        console.log(`⚡ [AUTOMATION HOOK] Đã đưa contact ${contact.email} vào kịch bản: ${auto.name}`);
       }
     } catch (err) {
-      console.error('[AUTOMATION HOOK ERROR]:', err);
+      console.error('❌ [AUTOMATION HOOK ERROR]:', err.message);
     }
   }
 
@@ -74,13 +75,11 @@ class ContactService {
       tenantId
     });
 
-    // Bắt buộc dùng AWAIT để đảm bảo trigger chạy trước khi trả response
+    // Kích hoạt tự động hóa ngay sau khi lưu Contact thành công
     await this.triggerContactCreatedAutomations(tenantId, newContact);
 
     return newContact;
   }
-
-
 
   async getContacts(tenantId, query) {
     const { page = 1, limit = 10, status, tag, search } = query;
@@ -90,9 +89,9 @@ class ContactService {
     if (tag) filter.tags = tag;
     if (search) {
       filter.$or = [
-        { email: { $regex: search, $options: 'i' } },
-        { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } }
+        { email: { $regex: search,$options: 'i' } },
+        { firstName: { $regex: search,$options: 'i' } },
+        { lastName: { $regex: search,$options: 'i' } }
       ];
     }
 
@@ -124,33 +123,33 @@ class ContactService {
   }
 
   async importContacts(tenantId, contactsList) {
-  if (!Array.isArray(contactsList) || contactsList.length === 0) {
-    throw new ApiError(400, 'Danh sách liên hệ import không hợp lệ.');
+    if (!Array.isArray(contactsList) || contactsList.length === 0) {
+      throw new ApiError(400, 'Danh sách liên hệ import không hợp lệ.');
+    }
+
+    // 🛡️ Kiểm tra Quota giới hạn tổng số contact sau khi import
+    const [tenant, currentCount] = await Promise.all([
+      Tenant.findById(tenantId),
+      contactRepository.countByTenant(tenantId)
+    ]);
+
+    const maxContacts = tenant?.quotas?.maxContacts || 500;
+    const remainingSlots = Math.max(0, maxContacts - currentCount);
+
+    if (currentCount + contactsList.length > maxContacts) {
+      throw new ApiError(
+        403, 
+        `Số lượng import (${contactsList.length}) vượt quá hạn mức còn lại của gói (${remainingSlots} chỗ trống).`
+      );
+    }
+
+    const result = await contactRepository.bulkUpsert(contactsList, tenantId);
+    return {
+      upsertedCount: result.upsertedCount || 0,
+      modifiedCount: result.modifiedCount || 0,
+      matchedCount: result.matchedCount || 0
+    };
   }
-
-  // 🛡️ Kiểm tra Quota giới hạn tổng số contact sau khi import
-  const [tenant, currentCount] = await Promise.all([
-    Tenant.findById(tenantId),
-    contactRepository.countByTenant(tenantId)
-  ]);
-
-  const maxContacts = tenant?.quotas?.maxContacts || 500;
-  if (currentCount + contactsList.length > maxContacts) {
-    throw new ApiError(
-      403, 
-      `Số lượng import (${contactsList.length}) vượt quá hạn mức còn lại của gói (${maxContacts - currentCount} chỗ trống).`
-    );
-  }
-
-  const result = await contactRepository.bulkUpsert(contactsList, tenantId);
-  return {
-    upsertedCount: result.upsertedCount || 0,
-    modifiedCount: result.modifiedCount || 0,
-    matchedCount: result.matchedCount || 0
-  };
-  }
-
-  
 }
 
 export default new ContactService();

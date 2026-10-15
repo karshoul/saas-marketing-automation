@@ -1,16 +1,13 @@
 import { Queue, Worker } from 'bullmq';
-import Redis from 'ioredis';
+import { redis } from '../config/redis.js'; // Dùng chung kết nối Redis chuẩn của hệ thống
 import AutomationExecution from '../models/AutomationExecution.js';
 import Automation from '../models/Automation.js';
 import Contact from '../models/Contact.js';
 import Template from '../models/Template.js';
 import { emailQueue } from './email.queue.js';
 
-const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: null
-});
-
-export const automationQueue = new Queue('automation-workflow-queue', { connection });
+// Khởi tạo Queue kết nối trực tiếp với Upstash Redis Cloud
+export const automationQueue = new Queue('automation-workflow-queue', { connection: redis });
 
 /**
  * Hàm chuyển đổi đơn vị thời gian DELAY sang Milliseconds
@@ -30,7 +27,7 @@ function calculateDelayMs(value, unit) {
 }
 
 /**
- * Khởi tạo Worker xử lý từng bước của kịch bản (Chỉ chạy khi được gọi tường minh)
+ * Khởi tạo Worker xử lý từng bước của kịch bản (Được gọi khởi tạo khi boot ứng dụng)
  */
 export const initAutomationWorker = (concurrency = 2) => {
   const worker = new Worker(
@@ -55,7 +52,7 @@ export const initAutomationWorker = (concurrency = 2) => {
       const steps = automation.steps || [];
       const currentIndex = execution.currentStepIndex;
 
-      // 1. Kiểm tra nếu đã hoàn tất toàn bộ các bước trong phễu
+      // 1. Kiểm tra nếu đã hoàn tất toàn bộ các bước trong kịch bản
       if (currentIndex >= steps.length) {
         execution.status = 'COMPLETED';
         execution.nextExecutionAt = null;
@@ -63,6 +60,7 @@ export const initAutomationWorker = (concurrency = 2) => {
           execution.save(),
           Automation.findByIdAndUpdate(automation._id, { $inc: { 'stats.totalCompleted': 1 } })
         ]);
+        console.log(`🎉 [Automation Finished]: Contact ${contact.email} đã hoàn tất kịch bản "${automation.name}"`);
         return;
       }
 
@@ -79,9 +77,9 @@ export const initAutomationWorker = (concurrency = 2) => {
                 .replace(/{{lastName}}/g, contact.lastName || '')
                 .replace(/{{company}}/g, contact.company || 'Doanh nghiệp')
                 .replace(/{{email}}/g, contact.email)
-                .replace(/{{unsubscribeUrl}}/g, `https://verdio.io/unsubscribe?cid=auto&email=${contact.email}`);
+                .replace(/{{unsubscribeUrl}}/g, `${process.env.FRONTEND_URL || 'https://verdio.io'}/unsubscribe?cid=auto&email=${contact.email}`);
 
-              // Bắn vào emailQueue của hệ thống
+              // Bắn sang emailQueue để tận dụng hạ tầng gửi email & SLA của hệ thống
               await emailQueue.add(`auto-email-${contact._id}`, {
                 to: contact.email,
                 subject: template.subject,
@@ -149,7 +147,7 @@ export const initAutomationWorker = (concurrency = 2) => {
         execution.currentStepIndex = currentIndex + 1;
         await execution.save();
 
-        // Gọi tiếp bước tiếp theo
+        // Đẩy job kích hoạt bước tiếp theo
         await automationQueue.add(`next-step-${execution._id}`, {
           executionId: execution._id.toString()
         });
@@ -164,7 +162,7 @@ export const initAutomationWorker = (concurrency = 2) => {
         await execution.save();
       }
     },
-    { connection, concurrency }
+    { connection: redis, concurrency }
   );
 
   worker.on('completed', (job) => {
