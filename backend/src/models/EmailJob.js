@@ -72,7 +72,9 @@ const emailJobSchema = new mongoose.Schema(
     openCount: {
     type: Number,
     default: 0
-    }
+    },
+    clickedAt: { type: Date, default: null },
+    clickCount: { type: Number, default: 0 }
   },
   {
     timestamps: true

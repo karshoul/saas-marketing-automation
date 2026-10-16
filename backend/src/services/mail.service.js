@@ -50,23 +50,37 @@ class MailService {
   }
 
   injectTracking(htmlContent, { campaignId, recipientId, tenantId, jobId }) {
-    if (!htmlContent) return '';
+  if (!htmlContent) return '';
 
-    const trackingParams = `cid=${campaignId || ''}&rid=${recipientId || ''}&tid=${tenantId || ''}&jobId=${jobId || ''}`;
+  const trackingParams = `cid=${campaignId || ''}&rid=${recipientId || ''}&tid=${tenantId || ''}&jobId=${jobId || ''}`;
 
-    // Pixel tracking 1x1 GIF
-    const trackingPixelUrl = `${this.baseUrl}/api/v1/public/track/open?${trackingParams}`;
-    const pixelTag = `<img src="${trackingPixelUrl}" width="1" height="1" border="0" alt="" style="opacity:0; width:1px; height:1px;" />`;
+  // 1. Link Pixel Tracking Mở Mail (Open Rate)
+  const trackingPixelUrl = `${this.baseUrl}/api/v1/public/track/open?${trackingParams}`;
+  const pixelTag = `<img src="${trackingPixelUrl}" width="1" height="1" border="0" alt="" style="opacity:0; width:1px; height:1px;" />`;
 
-    // Redirect link tracking
-    const trackingRedirectUrl = `${this.baseUrl}/api/v1/public/track/click?${trackingParams}&url=`;
-    let modifiedHtml = htmlContent.replace(/href=["'](http[^"']+)["']/gi, (match, originalUrl) => {
-      const encodedUrl = encodeURIComponent(originalUrl);
-      return `href="${trackingRedirectUrl}${encodedUrl}"`;
-    });
+  // 2. Tự động đổi Link trong nội dung thành Link Tracking Click (Click Rate)
+  const trackingRedirectUrl = `${this.baseUrl}/api/v1/public/track/click?${trackingParams}&url=`;
+  let modifiedHtml = htmlContent.replace(/href=["'](http[^"']+)["']/gi, (match, originalUrl) => {
+    // Không ghi đè nếu đã là link unsubscribe
+    if (originalUrl.includes('/unsubscribe')) return match;
+    const encodedUrl = encodeURIComponent(originalUrl);
+    return `href="${trackingRedirectUrl}${encodedUrl}"`;
+  });
 
-    return `${modifiedHtml}${pixelTag}`;
-  }
+  // 3. 🔥 Tự động chèn Chân thư chứa Link Hủy Nhận Tin (Unsubscribe Footer)
+  const unsubscribeUrl = `${this.baseUrl}/api/v1/public/unsubscribe?tid=${tenantId || ''}&rid=${recipientId || ''}`;
+  const unsubscribeFooter = `
+    <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #718096; font-family: Arial, sans-serif;">
+      <p style="margin: 0;">Bạn nhận được email này vì đã đăng ký thông tin qua nền tảng VERDIO.</p>
+      <p style="margin: 5px 0 0 0;">
+        Nếu không muốn nhận thư tiếp theo? 
+        <a href="${unsubscribeUrl}" style="color: #e53e3e; text-decoration: underline;">Hủy đăng ký tại đây</a>
+      </p>
+    </div>
+  `;
+
+  return `${modifiedHtml}${unsubscribeFooter}${pixelTag}`;
+}
 
   async verifySmtpConnection(smtpConfig) {
     const testTransporter = this.getTransporter(smtpConfig);

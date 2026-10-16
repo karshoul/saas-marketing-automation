@@ -6,6 +6,7 @@ import ApiError from '../utils/apiError.util.js';
 import { publicContactLimiter } from '../middleware/rateLimiter.middleware.js';
 import EmailJob from '../models/EmailJob.js';
 import { verifyAllowedDomain } from '../middleware/domainCheck.middleware.js';
+import Contact from '../models/Contact.js';
 
 const router = Router();
 
@@ -206,6 +207,77 @@ router.get('/track/open', async (req, res) => {
       'Cache-Control': 'no-store, no-cache, must-revalidate, private'
     });
     res.end(transparentPixel);
+  }
+});
+
+/**
+ * 🖱️ Public API Track lượt Click Link trong Email & Redirect
+ * Endpoint: GET /api/v1/public/track/click
+ */
+router.get('/track/click', async (req, res) => {
+  const { jobId, url } = req.query;
+  const targetUrl = url ? decodeURIComponent(url) : 'https://google.com';
+
+  try {
+    if (jobId && jobId !== 'undefined') {
+      await EmailJob.findByIdAndUpdate(jobId, {
+        $set: { clickedAt: new Date() },$inc: { clickCount: 1 }
+      });
+    }
+  } catch (error) {
+    console.error('[Click Tracking Error]:', error.message);
+  } finally {
+    return res.redirect(targetUrl);
+  }
+});
+
+/**
+ * 🔕 Public API Hủy Nhận Tin (Unsubscribe)
+ * Endpoint: GET /api/v1/public/unsubscribe
+ */
+router.get('/unsubscribe', async (req, res) => {
+  const { tid, rid, email } = req.query;
+
+  try {
+    let updatedContact = null;
+
+    if (rid && rid !== 'undefined') {
+      updatedContact = await Contact.findByIdAndUpdate(rid, { status: 'UNSUBSCRIBED' });
+    } else if (email && tid) {
+      updatedContact = await Contact.findOneAndUpdate(
+        { tenantId: tid, email: email },
+        { status: 'UNSUBSCRIBED' }
+      );
+    }
+
+    // Trả về giao diện thông báo Hủy thành công đẹp mắt trên trình duyệt
+    return res.send(`
+      <!DOCTYPE html>
+      <html lang="vi">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Hủy Nhận Tin Thành Công - VERDIO</title>
+        <style>
+          body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+          .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); text-align: center; max-width: 400px; width: 90%; }
+          .icon { font-size: 48px; margin-bottom: 16px; }
+          h2 { color: #0f172a; margin: 0 0 12px 0; font-size: 20px; }
+          p { color: #64748b; font-size: 14px; line-height: 1.5; margin: 0; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="icon">✅</div>
+          <h2>Đã Hủy Đăng Ký Thành Công!</h2>
+          <p>Địa chỉ email của bạn đã được xóa khỏi danh sách gửi thư tự động. Bạn sẽ không còn nhận được các email ưu đãi từ cửa hàng này nữa.</p>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error('[Unsubscribe Error]:', error.message);
+    return res.status(500).send('Có lỗi xảy ra, vui lòng thử lại sau.');
   }
 });
 
