@@ -1,9 +1,13 @@
 import { Router } from 'express';
+import cors from 'cors'; // 👈 1. Import cors
 import contactService from '../services/contact.service.js';
 import Tenant from '../models/Tenant.js';
 import ApiError from '../utils/apiError.util.js';
 
 const router = Router();
+
+// 🔓 2. Bật CORS tự do (*): Cho phép BẤT KỲ website/landing page nào cũng gửi được Form về Verdio
+router.use(cors({ origin: '*' }));
 
 /**
  * 🔓 API Công khai thu thập Contact từ Form bên ngoài
@@ -27,7 +31,7 @@ router.post('/contacts', async (req, res, next) => {
       throw new ApiError(404, 'Workspace không tồn tại trên hệ thống Verdio.');
     }
 
-    // 2. Tạo Contact mới (Hàm createContact đã tích hợp sẵn trigger kịch bản tự động)
+    // 2. Tạo Contact mới (Tự động kích hoạt Automation Workflow)
     const newContact = await contactService.createContact(tenant._id, {
       email,
       firstName: firstName || '',
@@ -45,7 +49,6 @@ router.post('/contacts', async (req, res, next) => {
       }
     });
   } catch (error) {
-    // Tránh văng lỗi 409 khi email đã tồn tại trong danh bạ
     if (error.statusCode === 409) {
       return res.status(200).json({
         success: true,
