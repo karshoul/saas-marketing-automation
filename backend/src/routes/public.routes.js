@@ -247,7 +247,8 @@ router.get('/unsubscribe', async (req, res) => {
       );
     }
 
-    const resubscribeUrl = `${process.env.BACKEND_BASE_URL || 'http://localhost:10000'}/api/v1/public/resubscribe?tid=${tid || ''}&rid=${rid || ''}&email=${email || ''}`;
+    // 💡 Dùng Root-relative URL bắt đầu bằng dấu `/` để trình duyệt tự lấy domain gốc
+    const resubscribeUrl = `/api/v1/public/resubscribe?tid=${tid || ''}&rid=${rid || ''}&email=${email || ''}`;
 
     return res.send(`
       <!DOCTYPE html>
