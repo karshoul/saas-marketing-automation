@@ -72,12 +72,17 @@ export const initAutomationWorker = (concurrency = 2) => {
           case 'SEND_EMAIL': {
             const template = await Template.findById(currentStep.config.templateId);
             if (template && contact.status === 'SUBSCRIBED') {
+              const backendUrl = process.env.BACKEND_BASE_URL || 'https://verdio-backend.onrender.com';
+              
               let html = (template.htmlContent || '')
                 .replace(/{{firstName}}/g, contact.firstName || 'Quý khách')
                 .replace(/{{lastName}}/g, contact.lastName || '')
                 .replace(/{{company}}/g, contact.company || 'Doanh nghiệp')
                 .replace(/{{email}}/g, contact.email)
-                .replace(/{{unsubscribeUrl}}/g, `${process.env.FRONTEND_URL || 'https://verdio.io'}/unsubscribe?cid=auto&email=${contact.email}`);
+                .replace(
+                  /{{unsubscribeUrl}}/g, 
+                  `${backendUrl}/api/contacts/unsubscribe?email=${contact.email}&tenantId=${execution.tenantId}`
+                );
 
               // Bắn sang emailQueue để tận dụng hạ tầng gửi email & SLA của hệ thống
               await emailQueue.add(`auto-email-${contact._id}`, {

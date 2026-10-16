@@ -150,6 +150,25 @@ class ContactService {
       matchedCount: result.matchedCount || 0
     };
   }
+
+  /**
+   * Cập nhật trạng thái Unsubscribe khi khách bấm link dưới email
+   */
+  async unsubscribeContact(email, tenantId) {
+    if (!email || !tenantId) {
+      throw new ApiError(400, 'Thông tin hủy đăng ký không hợp lệ.');
+    }
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Cập nhật trực tiếp status sang UNSUBSCRIBED
+    const updated = await Contact.findOneAndUpdate(
+      { email: cleanEmail, tenantId },
+      { status: 'UNSUBSCRIBED' },
+      { new: true }
+    );
+
+    return updated;
+  }
 }
 
 export default new ContactService();

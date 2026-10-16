@@ -32,6 +32,7 @@ import campaignRoutes from './src/routes/campaign.routes.js';
 import queueRouter from './src/routes/queue.routes.js';
 import billingRouter from './src/routes/billing.routes.js';
 import membershipRoutes from './src/routes/membership.routes.js';
+import publicRoutes from './src/routes/public.routes.js'; // 👈 Public API Route
 
 const app = express();
 
@@ -87,6 +88,9 @@ app.get('/', (req, res) => {
   });
 });
 
+// 🔓 Endpoint công khai nhúng Form / Webhook từ bên ngoài
+app.use('/api/v1/public', publicRoutes);
+
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/contacts', contactRoutes);
@@ -125,17 +129,14 @@ const startServer = async () => {
       await seedPlans();
     }
 
-    // Kiểm tra cờ bật Worker qua cấu hình env hoặc biến môi trường trực tiếp
     const shouldEnableWorkers = env.enableWorkers === 'true' || process.env.ENABLE_WORKERS === 'true';
 
     if (shouldEnableWorkers) {
       console.log('⚙️ [Workers Hub]: Biến môi trường ENABLE_WORKERS được kích hoạt. Đang khởi chạy Workers...');
 
-      // 1. Khởi tạo BullMQ Workers
       emailWorker = initEmailWorker(2);
       automationWorker = initAutomationWorker(2);
 
-      // 2. Kích hoạt Elastic Auto-scaler giám sát Email Queue
       workerScaler.init(emailWorker, {
         minConcurrency: 2,
         maxConcurrency: 20,

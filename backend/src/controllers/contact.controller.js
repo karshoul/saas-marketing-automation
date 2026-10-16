@@ -56,6 +56,28 @@ class ContactController {
       next(error);
     }
   }
+
+  async unsubscribe(req, res, next) {
+    try {
+      const { email, tenantId } = req.query;
+      await contactService.unsubscribeContact(email, tenantId);
+
+      // Trả về giao diện HTML phản hồi trực tiếp cho người dùng
+      return res.status(200).send(`
+        <div style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f9fafb; min-height: 100vh;">
+          <div style="max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            <h2 style="color: #10b981; margin-bottom: 10px;">✅ Hủy đăng ký thành công</h2>
+            <p style="color: #4b5563; line-height: 1.6;">
+              Địa chỉ email <strong>${email || ''}</strong> đã được xóa khỏi danh sách nhận tin tự động của Workspace này.
+            </p>
+            <p style="color: #9ca3af; font-size: 13px; margin-top: 20px;">Cảm ơn bạn đã sử dụng dịch vụ của VERDIO.</p>
+          </div>
+        </div>
+      `);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export default new ContactController();

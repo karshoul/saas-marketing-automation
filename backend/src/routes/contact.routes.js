@@ -6,6 +6,9 @@ import { checkContactQuota } from '../middleware/quota.middleware.js';
 
 const router = express.Router();
 
+// 🔓 ROUTE CÔNG KHAI (Không cần Token JWT)
+router.get('/unsubscribe', contactController.unsubscribe);
+
 // Áp dụng middleware xác thực JWT cho tất cả endpoint Contact
 router.use(authenticateUser);
 

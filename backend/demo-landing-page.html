@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Trang Web Bán Hàng Demo (Tích hợp Verdio SaaS)</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f3f4f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+    .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 350px; text-align: center; }
+    input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+    button { width: 100%; padding: 12px; background: #2563eb; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+    button:hover { background: #1d4ed8; }
+    #msg { margin-top: 15px; font-size: 14px; color: #10b981; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>🎁 Nhận Mã Giảm Giá 20%</h2>
+    <p style="color: #6b7280; font-size: 14px;">Đăng ký email để nhận ngay voucher trải nghiệm sản phẩm.</p>
+    
+    <form id="leadForm">
+      <input type="text" id="firstName" placeholder="Họ và tên của bạn" required />
+      <input type="email" id="email" placeholder="Địa chỉ Email" required />
+      <button type="submit">ĐĂNG KÝ NGAY</button>
+    </form>
+
+    <div id="msg"></div>
+  </div>
+
+  <script>
+    // ⚠️ THAY BẰNG TENANT ID THỰC TẾ TRÊN DATABASE HOẶC TRÊN WEB VERDIO CỦA BẠN
+    const VERDIO_TENANT_ID = "65f123456789abcdef012345"; 
+    const VERDIO_BACKEND_URL = "http://localhost:5000"; // Hoặc https://verdio-backend.onrender.com
+
+    document.getElementById('leadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msgDiv = document.getElementById('msg');
+      msgDiv.innerText = "Đang gửi...";
+
+      try {
+        const res = await fetch(`${VERDIO_BACKEND_URL}/api/v1/public/contacts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenantId: VERDIO_TENANT_ID,
+            email: document.getElementById('email').value,
+            firstName: document.getElementById('firstName').value,
+            tags: ['Form_LandingPage']
+          })
+        });
+
+        const data = await res.json();
+        msgDiv.innerText = data.message;
+      } catch (err) {
+        msgDiv.innerText = "❌ Không thể kết nối tới Verdio SaaS!";
+      }
+    });
+  </script>
+</body>
+</html>
