@@ -232,35 +232,83 @@ router.get('/track/click', async (req, res) => {
 });
 
 /**
- * 🔕 Public API Hủy Nhận Tin (Unsubscribe)
- * Endpoint: GET /api/v1/public/unsubscribe
+ * 🔕 Public API Hủy Nhận Tin (Unsubscribe) + Có nút Đăng ký lại
  */
 router.get('/unsubscribe', async (req, res) => {
   const { tid, rid, email } = req.query;
 
   try {
-    let updatedContact = null;
-
     if (rid && rid !== 'undefined') {
-      updatedContact = await Contact.findByIdAndUpdate(rid, { status: 'UNSUBSCRIBED' });
+      await Contact.findByIdAndUpdate(rid, { status: 'UNSUBSCRIBED' });
     } else if (email && tid) {
-      updatedContact = await Contact.findOneAndUpdate(
+      await Contact.findOneAndUpdate(
         { tenantId: tid, email: email },
         { status: 'UNSUBSCRIBED' }
       );
     }
 
-    // Trả về giao diện thông báo Hủy thành công đẹp mắt trên trình duyệt
+    const resubscribeUrl = `${process.env.BACKEND_BASE_URL || 'http://localhost:10000'}/api/v1/public/resubscribe?tid=${tid || ''}&rid=${rid || ''}&email=${email || ''}`;
+
     return res.send(`
       <!DOCTYPE html>
       <html lang="vi">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Hủy Nhận Tin Thành Công - VERDIO</title>
+        <title>Hủy Nhận Tin - VERDIO</title>
         <style>
           body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-          .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); text-align: center; max-width: 400px; width: 90%; }
+          .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); text-align: center; max-width: 420px; width: 90%; }
+          .icon { font-size: 48px; margin-bottom: 16px; }
+          h2 { color: #0f172a; margin: 0 0 12px 0; font-size: 20px; }
+          p { color: #64748b; font-size: 14px; line-height: 1.5; margin: 0 0 20px 0; }
+          .btn-undo { display: inline-block; background: #2563eb; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 500; transition: background 0.2s; }
+          .btn-undo:hover { background: #1d4ed8; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="icon">✅</div>
+          <h2>Đã Hủy Đăng Ký Thành Công!</h2>
+          <p>Địa chỉ email của bạn đã được xóa khỏi danh sách gửi thư tự động.</p>
+          <a href="${resubscribeUrl}" class="btn-undo">🔄 Bạn bấm nhầm? Click vào đây để đăng ký lại</a>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error('[Unsubscribe Error]:', error.message);
+    return res.status(500).send('Có lỗi xảy ra, vui lòng thử lại sau.');
+  }
+});
+
+/**
+ * 🔔 Public API Đăng Ký Lại (Resubscribe)
+ * Endpoint: GET /api/v1/public/resubscribe
+ */
+router.get('/resubscribe', async (req, res) => {
+  const { tid, rid, email } = req.query;
+
+  try {
+    if (rid && rid !== 'undefined') {
+      await Contact.findByIdAndUpdate(rid, { status: 'SUBSCRIBED' });
+    } else if (email && tid) {
+      await Contact.findOneAndUpdate(
+        { tenantId: tid, email: email },
+        { status: 'SUBSCRIBED' }
+      );
+    }
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html lang="vi">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Đăng Ký Lại Thành Công - VERDIO</title>
+        <style>
+          body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+          .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); text-align: center; max-width: 420px; width: 90%; }
           .icon { font-size: 48px; margin-bottom: 16px; }
           h2 { color: #0f172a; margin: 0 0 12px 0; font-size: 20px; }
           p { color: #64748b; font-size: 14px; line-height: 1.5; margin: 0; }
@@ -268,15 +316,15 @@ router.get('/unsubscribe', async (req, res) => {
       </head>
       <body>
         <div class="card">
-          <div class="icon">✅</div>
-          <h2>Đã Hủy Đăng Ký Thành Công!</h2>
-          <p>Địa chỉ email của bạn đã được xóa khỏi danh sách gửi thư tự động. Bạn sẽ không còn nhận được các email ưu đãi từ cửa hàng này nữa.</p>
+          <div class="icon">🎉</div>
+          <h2>Chào Mừng Bạn Quay Trở Lại!</h2>
+          <p>Email của bạn đã được kích hoạt nhận thư lại bình thường. Cảm ơn bạn đã tiếp tục đồng hành cùng chúng tôi!</p>
         </div>
       </body>
       </html>
     `);
   } catch (error) {
-    console.error('[Unsubscribe Error]:', error.message);
+    console.error('[Resubscribe Error]:', error.message);
     return res.status(500).send('Có lỗi xảy ra, vui lòng thử lại sau.');
   }
 });

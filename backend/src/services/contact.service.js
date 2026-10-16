@@ -2,14 +2,14 @@ import mongoose from 'mongoose';
 import Contact from '../models/Contact.js';
 import Automation from '../models/Automation.js';
 import AutomationExecution from '../models/AutomationExecution.js';
-import Tenant from '../models/Tenant.js'; // 👈 Đã bổ sung import Tenant
+import Tenant from '../models/Tenant.js';
 import { automationQueue } from '../queues/automation.queue.js';
 import contactRepository from '../repositories/contact.repository.js';
 import ApiError from '../utils/apiError.util.js';
 
 class ContactService {
   /**
-   * Kích hoạt các Automation đang ACTIVE khi có Contact mới được tạo
+   * Kích hoạt các Automation đang ACTIVE khi có Contact mới được tạo / đăng ký lại
    */
   async triggerContactCreatedAutomations(tenantId, contact) {
     try {
@@ -31,6 +31,15 @@ class ContactService {
 
       for (const auto of matchingAutomations) {
         if (!auto.steps || auto.steps.length === 0) continue;
+
+        // Kiểm tra xem contact có đang trong phiên chạy chưa hoàn thành của kịch bản này không
+        const existingExecution = await AutomationExecution.findOne({
+          automationId: auto._id,
+          contactId: contact._id,
+          status: 'IN_PROGRESS'
+        });
+
+        if (existingExecution) continue;
 
         // Tạo phiên chạy (Execution)
         const execution = await AutomationExecution.create({
@@ -65,14 +74,49 @@ class ContactService {
     const cleanEmail = data.email.trim().toLowerCase();
 
     const existing = await contactRepository.findByEmail(cleanEmail, tenantId);
+
+    // 🔥 1. Xử lý trường hợp Contact đã tồn tại
     if (existing) {
+      // Nếu trước đó khách đã UNSUBSCRIBED -> Kích hoạt lại SUBSCRIBED và gửi lại Automation
+      if (existing.status === 'UNSUBSCRIBED') {
+        existing.status = 'SUBSCRIBED';
+        if (data.firstName) existing.firstName = data.firstName;
+        if (data.lastName) existing.lastName = data.lastName;
+        if (data.company) existing.company = data.company;
+        if (Array.isArray(data.tags) && data.tags.length > 0) {
+          existing.tags = Array.from(new Set([...existing.tags, ...data.tags]));
+        }
+        await existing.save();
+
+        // Kích hoạt lại kịch bản chào mừng/gửi voucher
+        await this.triggerContactCreatedAutomations(tenantId, existing);
+        return existing;
+      }
+
+      // Nếu đã Subscribed rồi -> Ném lỗi trùng 409
       throw new ApiError(409, 'Email này đã tồn tại trong danh bạ Workspace của bạn.');
     }
 
+    // 🛡️ 2. Kiểm tra Quota giới hạn Contact trước khi tạo mới
+    const [tenant, currentCount] = await Promise.all([
+      Tenant.findById(tenantId),
+      contactRepository.countByTenant(tenantId)
+    ]);
+
+    const maxContacts = tenant?.quotas?.maxContacts || 500;
+    if (currentCount >= maxContacts) {
+      throw new ApiError(
+        403, 
+        `Đã đạt hạn mức lưu trữ tối đa (${maxContacts} contacts) của gói cước hiện tại. Vui lòng nâng cấp gói cước!`
+      );
+    }
+
+    // 3. Tạo mới Contact
     const newContact = await contactRepository.create({
       ...data,
       email: cleanEmail,
-      tenantId
+      tenantId,
+      status: 'SUBSCRIBED'
     });
 
     // Kích hoạt tự động hóa ngay sau khi lưu Contact thành công
@@ -160,14 +204,27 @@ class ContactService {
     }
     const cleanEmail = email.trim().toLowerCase();
 
-    // Cập nhật trực tiếp status sang UNSUBSCRIBED
-    const updated = await Contact.findOneAndUpdate(
+    return await Contact.findOneAndUpdate(
       { email: cleanEmail, tenantId },
       { status: 'UNSUBSCRIBED' },
       { new: true }
     );
+  }
 
-    return updated;
+  /**
+   * 🔥 Cập nhật trạng thái Resubscribe khi khách kích hoạt lại
+   */
+  async resubscribeContact(email, tenantId) {
+    if (!email || !tenantId) {
+      throw new ApiError(400, 'Thông tin đăng ký lại không hợp lệ.');
+    }
+    const cleanEmail = email.trim().toLowerCase();
+
+    return await Contact.findOneAndUpdate(
+      { email: cleanEmail, tenantId },
+      { status: 'SUBSCRIBED' },
+      { new: true }
+    );
   }
 }
 
