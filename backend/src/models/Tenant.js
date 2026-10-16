@@ -50,7 +50,12 @@ const tenantSchema = new mongoose.Schema(
     deletedAt: {
       type: Date,
       default: null
-    }
+    },
+    allowedDomains: {
+  type: [String],
+  default: [] // Nếu mảng rỗng [] -> Cho phép tất cả tên miền (Default). 
+              // Nếu có giá trị ['myshop.com'] -> Chỉ cho phép domain này gọi API.
+}
   },
   { timestamps: true }
 );
