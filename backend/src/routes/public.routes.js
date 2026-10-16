@@ -3,6 +3,7 @@ import cors from 'cors';
 import contactService from '../services/contact.service.js';
 import Tenant from '../models/Tenant.js';
 import ApiError from '../utils/apiError.util.js';
+import { publicContactLimiter } from '../middleware/rateLimiter.middleware.js';
 
 const router = Router();
 
@@ -126,7 +127,7 @@ router.get('/verdio.js', (req, res) => {
  * 🔓 API Công khai thu thập Contact từ Form / Webhook bên ngoài
  * Endpoint: POST /api/v1/public/contacts
  */
-router.post('/contacts', async (req, res, next) => {
+router.post('/contacts', publicContactLimiter, async (req, res, next) => {
   try {
     const { tenantId, email, firstName, lastName, company, tags } = req.body;
 
