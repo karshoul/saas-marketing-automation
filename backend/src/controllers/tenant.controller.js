@@ -1,6 +1,7 @@
 import tenantService from '../services/tenant.service.js';
 import { success } from '../utils/response.util.js';
 import Membership from '../models/Membership.js';
+import mailService from '../services/mail.service.js';
 
 class TenantController {
   
@@ -90,6 +91,16 @@ class TenantController {
       next(error);
     }
   }
+
+  async testSmtpConnection(req, res, next) {
+  try {
+    const { host, port, user, pass, senderEmail } = req.body;
+    await mailService.verifySmtpConnection({ host, port, user, pass, senderEmail });
+    return success(res, 'Kết nối đến Server SMTP thành công! Bạn có thể lưu cấu hình này.');
+  } catch (error) {
+    next(error);
+  }
+}
 }
 
 // Bind 'this' context cho các async handler

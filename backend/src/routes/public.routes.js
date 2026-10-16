@@ -4,6 +4,7 @@ import contactService from '../services/contact.service.js';
 import Tenant from '../models/Tenant.js';
 import ApiError from '../utils/apiError.util.js';
 import { publicContactLimiter } from '../middleware/rateLimiter.middleware.js';
+import EmailJob from '../models/EmailJob.js';
 
 const router = Router();
 
@@ -168,6 +169,38 @@ router.post('/contacts', publicContactLimiter, async (req, res, next) => {
       });
     }
     next(error);
+  }
+});
+
+/**
+ * 👁️ Public API Track lượt mở Email
+ * URL: GET /api/v1/public/track/open?jobId=xxx&tid=yyy
+ */
+router.get('/track/open', async (req, res) => {
+  try {
+    const { jobId } = req.query;
+
+    if (jobId && jobId !== 'undefined') {
+      await EmailJob.findByIdAndUpdate(jobId, {
+        $set: { openedAt: new Date() },
+        $inc: { openCount: 1 }
+      });
+    }
+  } catch (error) {
+    console.error('[Pixel Tracking Error]:', error.message);
+  } finally {
+    // Trả về bức ảnh GIF 1x1 px trong suốt
+    const transparentPixel = Buffer.from(
+      'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+      'base64'
+    );
+
+    res.writeHead(200, {
+      'Content-Type': 'image/gif',
+      'Content-Length': transparentPixel.length,
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private'
+    });
+    res.end(transparentPixel);
   }
 });
 

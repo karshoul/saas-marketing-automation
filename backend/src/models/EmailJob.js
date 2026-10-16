@@ -64,6 +64,14 @@ const emailJobSchema = new mongoose.Schema(
     completedAt: {
       type: Date,
       default: null
+    },
+    openedAt: {
+    type: Date,
+    default: null
+    },
+    openCount: {
+    type: Number,
+    default: 0
     }
   },
   {

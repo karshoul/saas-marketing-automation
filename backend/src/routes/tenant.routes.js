@@ -12,5 +12,11 @@ router.put('/me', authorizeRoles('OWNER'), tenantController.updateMyTenant);
 router.get('/my-workspaces', tenantController.getMyWorkspaces);
 router.post('/regenerate-api-key', authorizeRoles('OWNER'), tenantController.regenerateApiKey);
 router.put('/smtp', authorizeRoles('OWNER'), tenantController.updateTenantSmtp);
+// Thêm route test SMTP
+router.post(
+  '/smtp/test',
+  authorizeRoles('OWNER'),
+  tenantController.testSmtpConnection
+);
 
 export default router;
