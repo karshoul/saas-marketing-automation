@@ -5,20 +5,21 @@ import {
   Building2,
   Key,
   Mail,
-  Shield,
+  Globe,
+  Code2,
   RefreshCw,
-  CheckCircle2,
-  AlertCircle,
   Copy,
   Check,
   Eye,
   EyeOff,
-  ShieldAlert
+  ShieldAlert,
+  Send
 } from "lucide-react";
 
 export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [testingSmtp, setTestingSmtp] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [activeTab, setActiveTab] = useState("general");
@@ -38,6 +39,9 @@ export default function Settings() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
 
+  // Cấu hình Allowed Domains (CORS Protection)
+  const [allowedDomains, setAllowedDomains] = useState("");
+
   const [smtpConfig, setSmtpConfig] = useState({
     host: "",
     port: 465,
@@ -46,7 +50,9 @@ export default function Settings() {
     senderEmail: ""
   });
 
-  // Tải thông tin Tenant & API Key thực tế từ Backend
+  const [copiedScript, setCopiedScript] = useState(false);
+
+  // Tải thông tin Tenant thực tế từ Backend
   const fetchTenantProfile = useCallback(async () => {
     if (userRole === "MEMBER") return;
     setLoading(true);
@@ -66,6 +72,9 @@ export default function Settings() {
         }
         if (tenantData.apiKey) {
           setApiKey(tenantData.apiKey);
+        }
+        if (Array.isArray(tenantData.allowedDomains)) {
+          setAllowedDomains(tenantData.allowedDomains.join(", "));
         }
         if (tenantData.smtpConfig) {
           setSmtpConfig({
@@ -105,7 +114,7 @@ export default function Settings() {
     );
   }
 
-  // 1. Cập nhật thông tin chung (Tên Workspace)
+  // 1. Cập nhật thông tin chung & Allowed Domains
   const handleUpdateTenant = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -113,13 +122,22 @@ export default function Settings() {
     setSuccessMsg("");
 
     try {
-      const payload = { name: tenant.name.trim() };
+      const parsedDomains = allowedDomains
+        .split(",")
+        .map((d) => d.trim().toLowerCase())
+        .filter(Boolean);
+
+      const payload = { 
+        name: tenant.name.trim(),
+        allowedDomains: parsedDomains
+      };
+
       const res = await api.put("/tenants/me", payload);
       const updated = res.data?.data?.tenant || res.data?.tenant || res.data?.data;
       if (updated?.name) {
         localStorage.setItem("workspaceName", updated.name);
       }
-      setSuccessMsg("Cập nhật thông tin Workspace thành công!");
+      setSuccessMsg("Cập nhật thông tin Workspace và Tên miền cấp phép thành công!");
     } catch (err) {
       setErrorMsg(err.response?.data?.message || "Lỗi cập nhật cấu hình Workspace.");
     } finally {
@@ -127,7 +145,7 @@ export default function Settings() {
     }
   };
 
-  // 2. Tạo mới / Xoay vòng Khóa API (Rotate API Key)
+  // 2. Tạo mới Khóa API
   const handleRegenerateApiKey = async () => {
     if (!window.confirm("Bạn có chắc muốn tạo lại Khóa API mới? Khóa cũ sẽ bị vô hiệu hóa ngay lập tức.")) return;
     try {
@@ -142,7 +160,23 @@ export default function Settings() {
     }
   };
 
-  // 3. Cập nhật cấu hình SMTP riêng cho Workspace
+  // 3. 🔥 NÚT TEST SMTP CONNECTION (GỌI API BE VỪA TẠO)
+  const handleTestSmtp = async () => {
+    setTestingSmtp(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+
+    try {
+      const res = await api.post("/tenants/smtp/test", smtpConfig);
+      setSuccessMsg(res.data?.message || "Kết nối đến máy chủ SMTP thành công!");
+    } catch (err) {
+      setErrorMsg(err.response?.data?.message || "Kết nối SMTP thất bại. Vui lòng kiểm tra lại thông tin.");
+    } finally {
+      setTestingSmtp(false);
+    }
+  };
+
+  // 4. Cập nhật cấu hình SMTP
   const handleUpdateSmtp = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -159,14 +193,24 @@ export default function Settings() {
     }
   };
 
-  const copyToClipboard = (text) => {
+  const copyToClipboard = (text, type = "key") => {
     navigator.clipboard.writeText(text);
-    setCopiedKey(true);
-    setTimeout(() => setCopiedKey(false), 2000);
+    if (type === "script") {
+      setCopiedScript(true);
+      setTimeout(() => setCopiedScript(false), 2000);
+    } else {
+      setCopiedKey(true);
+      setTimeout(() => setCopiedKey(false), 2000);
+    }
   };
+
+  // Đoạn Script nhúng Widget chuẩn
+  const backendBaseUrl = process.env.REACT_APP_BACKEND_URL || "https://verdio-backend.onrender.com";
+  const widgetScriptCode = `<script src="${backendBaseUrl}/api/v1/public/verdio.js" data-tenant-id="${tenant._id}"></script>`;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300 font-sans text-white">
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -179,7 +223,7 @@ export default function Settings() {
             </span>
           </div>
           <p className="text-xs text-[#94a3b8]">
-            Quản trị tổ chức đa người thuê (Multi-tenant), thông tin định danh và khóa API hệ thống
+            Quản trị tổ chức đa người thuê (Multi-tenant), tên miền cấp phép nhúng và cổng gửi thư riêng
           </p>
         </div>
 
@@ -192,9 +236,13 @@ export default function Settings() {
       {errorMsg && <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center justify-between"><span>{errorMsg}</span><button onClick={() => setErrorMsg("")}>✕</button></div>}
       {successMsg && <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center justify-between"><span>{successMsg}</span><button onClick={() => setSuccessMsg("")}>✕</button></div>}
 
-      <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+      {/* TABS NAVIGATION */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-3">
         <button onClick={() => setActiveTab("general")} className={`px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-all cursor-pointer ${activeTab === "general" ? "bg-[#6366f1]/20 text-[#38bdf8] border border-[#38bdf8]/30 font-bold" : "text-[#94a3b8] hover:text-white"}`}>
-          <Building2 className="w-4 h-4" /><span>Thông Tin Chung</span>
+          <Building2 className="w-4 h-4" /><span>Thông Tin Chung & CORS</span>
+        </button>
+        <button onClick={() => setActiveTab("widget")} className={`px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-all cursor-pointer ${activeTab === "widget" ? "bg-[#6366f1]/20 text-[#38bdf8] border border-[#38bdf8]/30 font-bold" : "text-[#94a3b8] hover:text-white"}`}>
+          <Code2 className="w-4 h-4" /><span>Mã Nhúng Widget</span>
         </button>
         <button onClick={() => setActiveTab("apikeys")} className={`px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-all cursor-pointer ${activeTab === "apikeys" ? "bg-[#6366f1]/20 text-[#38bdf8] border border-[#38bdf8]/30 font-bold" : "text-[#94a3b8] hover:text-white"}`}>
           <Key className="w-4 h-4" /><span>Khóa API & Tích Hợp</span>
@@ -204,20 +252,40 @@ export default function Settings() {
         </button>
       </div>
 
-      {/* TAB 1: THÔNG TIN CHUNG */}
+      {/* TAB 1: THÔNG TIN CHUNG & ALLOWED DOMAINS */}
       {activeTab === "general" && (
         <div className="bg-[#0b1329]/70 border border-white/10 rounded-2xl p-6 backdrop-blur-xl max-w-3xl space-y-6">
-          <form onSubmit={handleUpdateTenant} className="space-y-4 text-xs">
+          <form onSubmit={handleUpdateTenant} className="space-y-5 text-xs">
             <div>
               <label className="block text-[#cbd5e1] font-semibold mb-1.5">Tên Không Gian Làm Việc (*)</label>
               <input type="text" required value={tenant.name} onChange={(e) => setTenant({ ...tenant, name: e.target.value })} className="w-full bg-[#020617] border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#38bdf8]" />
             </div>
+
             <div>
               <label className="block text-[#cbd5e1] font-semibold mb-1.5">Mã Slug Định Danh (Read-only)</label>
               <input type="text" disabled value={tenant.slug} className="w-full bg-[#020617]/50 border border-white/5 rounded-xl px-3.5 py-2.5 text-[#64748b] font-mono cursor-not-allowed" />
             </div>
+
+            {/* 🛡️ TÍNH NĂNG MỚI: BẢO VỆ TÊN MIỀN ALLOWED DOMAINS */}
+            <div className="pt-2 border-t border-white/10">
+              <label className="block text-[#cbd5e1] font-semibold mb-1 flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-[#38bdf8]" />
+                Tên Miền Được Phép Nhúng Form (Allowed Domains)
+              </label>
+              <p className="text-[11px] text-[#94a3b8] mb-2">
+                Nhập danh sách tên miền website của bạn (cách nhau dấu phẩy). Chỉ những domain này mới được gửi dữ liệu về Workspace để chống Spam/Nhúng trộm. Đặt <code className="text-[#00D98B]">localhost</code> khi làm thử nghiệm.
+              </p>
+              <input 
+                type="text" 
+                placeholder="myshop.com, store.vn, localhost" 
+                value={allowedDomains} 
+                onChange={(e) => setAllowedDomains(e.target.value)} 
+                className="w-full bg-[#020617] border border-white/10 rounded-xl px-3.5 py-2.5 text-white font-mono focus:outline-none focus:border-[#38bdf8]" 
+              />
+            </div>
+
             <div className="pt-4 border-t border-white/10 flex justify-end">
-              <button type="submit" disabled={submitting} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#6366f1] to-[#38bdf8] text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:opacity-90">
+              <button type="submit" disabled={submitting} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#6366f1] to-[#38bdf8] text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:opacity-90 disabled:opacity-50">
                 {submitting ? "Đang lưu..." : "Lưu Cập Nhật"}
               </button>
             </div>
@@ -225,7 +293,38 @@ export default function Settings() {
         </div>
       )}
 
-      {/* TAB 2: KHÓA API */}
+      {/* TAB 2: 🔥 MÃ NHÚNG WIDGET (MỚI BỔ SUNG) */}
+      {activeTab === "widget" && (
+        <div className="bg-[#0b1329]/70 border border-white/10 rounded-2xl p-6 backdrop-blur-xl max-w-3xl space-y-6">
+          <div>
+            <h2 className="text-sm font-bold flex items-center gap-2">
+              <Code2 className="w-4 h-4 text-[#00D98B]" />
+              Mã Nhúng Pop-up Thu Nhập Voucher (`verdio.js`)
+            </h2>
+            <p className="text-xs text-[#94a3b8] mt-1 leading-relaxed">
+              Sao chép thẻ `<script>` bên dưới và dán vào trước thẻ `</body>` trên website cửa hàng của bạn. Pop-up sẽ tự động xuất hiện để thu thập Email khách hàng.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-[#020617] border border-white/10 space-y-3 font-mono text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[#94a3b8] text-[10px] uppercase font-bold">// HTML Embed Code</span>
+              <button 
+                onClick={() => copyToClipboard(widgetScriptCode, "script")} 
+                className="px-3 py-1.5 rounded-lg bg-[#00D98B]/10 hover:bg-[#00D98B]/20 text-[#00D98B] border border-[#00D98B]/30 flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                {copiedScript ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedScript ? "Đã Sao Chép!" : "Sao Chép Mã"}</span>
+              </button>
+            </div>
+            <div className="text-emerald-400 break-all bg-black/50 p-3 rounded-lg border border-white/5">
+              {widgetScriptCode}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: KHÓA API */}
       {activeTab === "apikeys" && (
         <div className="bg-[#0b1329]/70 border border-white/10 rounded-2xl p-6 backdrop-blur-xl max-w-3xl space-y-6">
           <div className="flex justify-between items-center">
@@ -244,13 +343,13 @@ export default function Settings() {
             </div>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => setShowApiKey(!showApiKey)} className="p-2 rounded-lg bg-white/[0.05] text-[#94a3b8] hover:text-white cursor-pointer">{showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
-              <button type="button" onClick={() => copyToClipboard(apiKey)} className="p-2 rounded-lg bg-[#6366f1]/20 text-[#38bdf8] border border-[#6366f1]/30 flex items-center gap-1.5 cursor-pointer">{copiedKey ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}<span>{copiedKey ? "Đã sao chép" : "Sao chép"}</span></button>
+              <button type="button" onClick={() => copyToClipboard(apiKey, "key")} className="p-2 rounded-lg bg-[#6366f1]/20 text-[#38bdf8] border border-[#6366f1]/30 flex items-center gap-1.5 cursor-pointer">{copiedKey ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}<span>{copiedKey ? "Đã sao chép" : "Sao chép"}</span></button>
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 3: CỔNG GỬI THƯ SMTP */}
+      {/* TAB 4: CỔNG GỬI THƯ SMTP & 🔥 NÚT TEST KẾT NỐI */}
       {activeTab === "smtp" && (
         <div className="bg-[#0b1329]/70 border border-white/10 rounded-2xl p-6 backdrop-blur-xl max-w-3xl space-y-6">
           <div>
@@ -286,8 +385,19 @@ export default function Settings() {
               <input type="email" placeholder="no-reply@company.com" value={smtpConfig.senderEmail} onChange={(e) => setSmtpConfig({ ...smtpConfig, senderEmail: e.target.value })} className="w-full bg-[#020617] border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:border-[#38bdf8]" />
             </div>
 
-            <div className="pt-4 border-t border-white/10 flex justify-end">
-              <button type="submit" disabled={submitting} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#6366f1] to-[#38bdf8] text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:opacity-90">
+            <div className="pt-4 border-t border-white/10 flex items-center justify-between">
+              {/* 🔥 NÚT TEST KẾT NỐI SMTP LIVE */}
+              <button 
+                type="button" 
+                onClick={handleTestSmtp} 
+                disabled={testingSmtp} 
+                className="px-4 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <Send className={`w-3.5 h-3.5 ${testingSmtp ? "animate-spin" : ""}`} />
+                <span>{testingSmtp ? "Đang Kiểm Tra..." : "Kiểm Tra Kết Nối SMTP"}</span>
+              </button>
+
+              <button type="submit" disabled={submitting} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#6366f1] to-[#38bdf8] text-white text-xs font-bold uppercase tracking-wider cursor-pointer hover:opacity-90 disabled:opacity-50">
                 {submitting ? "Đang lưu..." : "Lưu Cấu Hình SMTP"}
               </button>
             </div>

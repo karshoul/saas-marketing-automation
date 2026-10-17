@@ -227,14 +227,14 @@ export default function Analytics() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2">
           {/* Bước 1 */}
-          <div className="p-4 rounded-xl bg-white/[0.02] border border-white/10 relative overflow-hidden">
-            <div className="text-[11px] font-mono uppercase text-[#94a3b8] mb-1">1. Đã Phát Tán</div>
-            <div className="text-2xl font-bold font-mono text-white mb-2">{totals.sent.toLocaleString()}</div>
-            <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
-              <div className="h-full bg-[#6366f1] w-full" />
-            </div>
-            <span className="text-[10px] font-mono text-[#94a3b8] mt-2 block">100% Khởi tạo</span>
-          </div>
+<div className="p-4 rounded-xl bg-white/[0.02] border border-white/10 relative overflow-hidden">
+  <div className="text-[11px] font-mono uppercase text-[#94a3b8] mb-1">1. Đã Phát Tán</div>
+  <div className="text-2xl font-bold font-mono text-white mb-2">{totals.sent.toLocaleString()}</div>
+  <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+    <div className="h-full bg-[#6366f1] w-full" />
+  </div>
+  <span className="text-[10px] font-mono text-[#94a3b8] mt-2 block">100% Khởi tạo</span>
+</div>
 
           {/* Bước 2 */}
           <div className="p-4 rounded-xl bg-white/[0.02] border border-white/10 relative overflow-hidden">
