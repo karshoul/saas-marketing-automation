@@ -59,6 +59,22 @@ class AdminController {
       next(error);
     }
   }
+
+  // Xóa Workspace (Tenant) toàn cụm
+async deleteTenant(req, res, next) {
+  try {
+    const tenantId = req.params.tenantId || req.params.id;
+
+    if (!tenantId) {
+      return res.status(400).json({ success: false, message: 'Thiếu tenantId trong URL params.' });
+    }
+
+    const result = await adminService.deleteTenant(tenantId);
+    return success(res, 'Xóa Workspace khỏi cụm thành công.', result);
+  } catch (error) {
+    next(error);
+  }
+}
 }
 
 export default new AdminController();

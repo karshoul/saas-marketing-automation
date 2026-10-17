@@ -7,6 +7,7 @@ import {
   Lock,
   Unlock,
   Sliders,
+  Trash2,
   X
 } from "lucide-react";
 
@@ -54,7 +55,6 @@ export default function AdminTenants() {
       fetchTenants();
       setTimeout(() => setMsg(""), 3000);
     } catch (err) {
-      console.warn("Lỗi PUT status, thử gửi PATCH...", err);
       try {
         await api.patch(`/admin/tenants/${tenantId}/status`, { status: nextStatus });
         setMsg(`Đã ${nextStatus === "SUSPENDED" ? "khóa" : "mở khóa"} workspace ${tenant.name} thành công!`);
@@ -64,6 +64,26 @@ export default function AdminTenants() {
         console.error("Lỗi cập nhật trạng thái tenant:", innerErr);
         alert(innerErr.response?.data?.message || "Không thể cập nhật trạng thái tenant.");
       }
+    }
+  };
+
+  // Xóa hẳn Workspace khỏi hệ thống
+  const handleDeleteTenant = async (tenant) => {
+    const tenantId = tenant._id || tenant.id;
+    if (!tenantId) return alert("Không tìm thấy ID workspace.");
+
+    if (!window.confirm(`CẢNH BÁO: Bạn có chắc chắn muốn XÓA Workspace "${tenant.name}" không?\nHành động này không thể hoàn tác!`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/admin/tenants/${tenantId}`);
+      setMsg(`Đã xóa thành công workspace ${tenant.name}!`);
+      fetchTenants();
+      setTimeout(() => setMsg(""), 3000);
+    } catch (err) {
+      console.error("Lỗi xóa tenant:", err);
+      alert(err.response?.data?.message || "Không thể xóa workspace này.");
     }
   };
 
@@ -240,11 +260,19 @@ export default function AdminTenants() {
                           className={`p-1.5 rounded-lg transition-all cursor-pointer ${
                             isSuspended
                               ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
-                              : "bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                              : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
                           }`}
                           title={isSuspended ? "Mở khóa tenant" : "Khóa tenant"}
                         >
                           {isSuspended ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteTenant(t)}
+                          className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
+                          title="Xóa hẳn Workspace"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>

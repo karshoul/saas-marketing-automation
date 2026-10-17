@@ -5,11 +5,11 @@ import { requireSuperAdmin } from '../middleware/admin.middleware.js';
 
 const router = Router();
 
-// Toàn bộ route quản trị đều đi qua 2 lớp bảo vệ nghiêm ngặt
+// Lớp bảo vệ xác thực SuperAdmin
 router.use(authenticateUser);
 router.use(requireSuperAdmin);
 
-// Quản lý Tenants (Hỗ trợ cả PUT và PATCH)
+// Quản lý Tenants
 router.get('/tenants', adminController.getTenants);
 
 router.put('/tenants/:tenantId/status', adminController.updateStatus);
@@ -18,12 +18,15 @@ router.patch('/tenants/:tenantId/status', adminController.updateStatus);
 router.put('/tenants/:tenantId/plan', adminController.updatePlan);
 router.patch('/tenants/:tenantId/plan', adminController.updatePlan);
 
+// Thêm Route Xóa Workspace
+router.delete('/tenants/:tenantId', adminController.deleteTenant);
+
 // Giám sát Hạ Tầng Queue & Worker Realtime
 if (adminController.getQueueStatus) {
   router.get('/queue-status', adminController.getQueueStatus);
 }
 
-// Benchmark Engine (Ablation Study)
+// Benchmark Engine
 router.post('/benchmark/run', adminController.triggerBenchmark);
 
 export default router;

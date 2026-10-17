@@ -91,9 +91,21 @@ class AdminService {
   }
 
   /**
+   * Xóa hẳn hoặc Xóa mềm Workspace (Tenant) khỏi cụm
+   */
+  async deleteTenant(tenantId) {
+    const tenant = await Tenant.findByIdAndUpdate(
+      tenantId,
+      { $set: { status: 'DELETED', isDeleted: true } },
+      { new: true }
+    );
+
+    if (!tenant) throw new Error('Không tìm thấy Tenant để xóa.');
+    return tenant;
+  }
+
+  /**
    * Chạy kịch bản Benchmark tải giả lập (Ablation Study) phục vụ báo cáo khóa luận
-   * So sánh: FIFO vs Static Priority vs VERDIO Adaptive P(t)
-   * Tự động biến đổi chỉ số động theo Workload Size và Burst Ratio
    */
   async runBenchmarkSimulation({ workloadSize = 2000, burstRatio = 0.4 }) {
     const N = Number(workloadSize);
@@ -114,14 +126,14 @@ class AdminService {
     const fifoJain = Number(Math.max(0.35, 0.72 - B * 0.45).toFixed(2));
     const fifoThroughput = `${Math.max(45, Math.round(200 / Math.sqrt(loadFactor)))} jobs/s`;
 
-    // Baseline 2: Static Priority (Tốt hơn FIFO nhưng vẫn bị đói tác vụ Bulk khi đợt Burst cao)
+    // Baseline 2: Static Priority
     const staticP95 = Number((6.8 * Math.pow(loadFactor, 1.1)).toFixed(1));
     const staticP99 = Number((18.5 * Math.pow(loadFactor, 1.15)).toFixed(1));
     const staticSlaViolation = Number(Math.min(35.0, 3.2 * loadFactor * (1 + B * 0.8)).toFixed(1));
     const staticJain = Number(Math.max(0.50, 0.80 - B * 0.25).toFixed(2));
     const staticThroughput = `${Math.max(70, Math.round(250 / Math.sqrt(loadFactor)))} jobs/s`;
 
-    // Cơ chế đề xuất: VERDIO Dynamic P(t) + Worker Auto-scaler (Đảm bảo SLA violation luôn bằng 0%)
+    // Cơ chế đề xuất: VERDIO Dynamic P(t) + Worker Auto-scaler
     const verdioP95 = Number(Math.min(5.5, 1.8 * (1 + B * 0.4) * Math.log10(1 + N / 1000)).toFixed(1));
     const verdioP99 = Number(Math.min(14.0, 4.5 * (1 + B * 0.5) * Math.log10(1 + N / 1000)).toFixed(1));
     const verdioSlaViolation = 0.0;
