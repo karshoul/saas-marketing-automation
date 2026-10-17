@@ -4,7 +4,6 @@ import {
   CreditCard,
   CheckCircle2,
   QrCode,
-  RefreshCw,
   AlertCircle,
   X,
   Copy,
@@ -13,6 +12,12 @@ import {
   ShieldAlert
 } from "lucide-react";
 
+const PLAN_LEVELS = {
+  FREE: 1,
+  PRO: 2,
+  ENTERPRISE: 3
+};
+
 export default function Billing() {
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState(null);
@@ -20,7 +25,6 @@ export default function Billing() {
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  // Kiểm tra quyền OWNER
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const userRole = (user?.role || "MEMBER").toUpperCase();
 
@@ -42,7 +46,7 @@ export default function Billing() {
       setPlans(plansRes.data?.data || plansRes.data);
       const tenantData = tenantRes.data?.data?.tenant || tenantRes.data?.tenant || tenantRes.data?.data;
       if (tenantData?.plan) {
-        setCurrentPlan(tenantData.plan);
+        setCurrentPlan(tenantData.plan.toUpperCase());
       }
     } catch (err) {
       console.error("Lỗi tải thông tin Billing:", err);
@@ -56,10 +60,9 @@ export default function Billing() {
     fetchBillingData();
   }, [fetchBillingData]);
 
-  // Nếu không phải OWNER, hiển thị màn hình Chặn Truy Cập 403
   if (userRole !== "OWNER") {
     return (
-      <div className="max-w-xl mx-auto mt-20 p-8 rounded-3xl bg-[#0b1329]/90 border border-red-500/30 text-center space-y-4 shadow-[0_0_50px_rgba(239,68,68,0.15)]">
+      <div className="max-w-xl mx-auto mt-20 p-8 rounded-3xl bg-[#0b1329]/90 border border-red-500/30 text-center space-y-4 shadow-[0_0_50px_rgba(239,68,68,0.15)] font-sans">
         <div className="w-14 h-14 rounded-2xl bg-red-500/20 border border-red-500/40 text-red-400 flex items-center justify-center mx-auto">
           <ShieldAlert className="w-7 h-7" />
         </div>
@@ -74,6 +77,16 @@ export default function Billing() {
 
   const handleSubscribe = async (planKey) => {
     if (planKey === currentPlan) return;
+    const currentLevel = PLAN_LEVELS[currentPlan] || 1;
+    const targetLevel = PLAN_LEVELS[planKey] || 1;
+
+    if (targetLevel < currentLevel) {
+      const confirmDowngrade = window.confirm(
+        `Bạn có chắc chắn muốn HẠ CẤP về gói ${planKey}? Hạn mức gửi email hàng tháng sẽ bị giảm.`
+      );
+      if (!confirmDowngrade) return;
+    }
+
     setSubmitting(true);
     setErrorMsg("");
     try {
@@ -97,7 +110,8 @@ export default function Billing() {
         const order = res.data?.data || res.data;
         if (order?.status === "PAID") {
           setPollingStatus("PAID");
-          setSuccessMsg(`Thanh toán thành công! Gói cước đã được nâng cấp lên ${order.plan}.`);
+          setSuccessMsg(`Thanh toán thành công! Gói cước đã được chuyển sang ${order.plan}.`);
+          window.dispatchEvent(new Event("tenant_updated"));
           fetchBillingData();
           setTimeout(() => {
             setCheckoutModal(null);
@@ -133,8 +147,50 @@ export default function Billing() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const currentLevel = PLAN_LEVELS[currentPlan] || 1;
+
+  const renderPlanButton = (planKey, labelDefault) => {
+    const targetLevel = PLAN_LEVELS[planKey];
+    const isCurrent = currentPlan === planKey;
+    const isDowngrade = targetLevel < currentLevel;
+
+    if (isCurrent) {
+      return (
+        <button disabled className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-[#64748b] cursor-not-allowed">
+          Gói Hiện Tại Của Bạn
+        </button>
+      );
+    }
+
+    if (isDowngrade) {
+      return (
+        <button
+          onClick={() => handleSubscribe(planKey)}
+          disabled={submitting}
+          className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-bold uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40"
+        >
+          {`Hạ Cấp Về Gói ${planKey}`}
+        </button>
+      );
+    }
+
+    return (
+      <button
+        onClick={() => handleSubscribe(planKey)}
+        disabled={submitting}
+        className={`w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 ${
+          planKey === "ENTERPRISE"
+            ? "bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/40 text-amber-300"
+            : "bg-gradient-to-r from-[#6366f1] to-[#38bdf8] text-white"
+        }`}
+      >
+        {labelDefault}
+      </button>
+    );
+  };
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-300">
+    <div className="space-y-8 animate-in fade-in duration-300 font-sans">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -165,7 +221,7 @@ export default function Billing() {
             <AlertCircle className="w-4 h-4" />
             <span>{errorMsg}</span>
           </div>
-          <button onClick={() => setErrorMsg("")}><X className="w-4 h-4" /></button>
+          <button onClick={() => setErrorMsg("")} className="cursor-pointer"><X className="w-4 h-4" /></button>
         </div>
       )}
 
@@ -175,11 +231,11 @@ export default function Billing() {
             <CheckCircle2 className="w-4 h-4" />
             <span>{successMsg}</span>
           </div>
-          <button onClick={() => setSuccessMsg("")}><X className="w-4 h-4" /></button>
+          <button onClick={() => setSuccessMsg("")} className="cursor-pointer"><X className="w-4 h-4" /></button>
         </div>
       )}
 
-      {/* Pricing cards grid */}
+      {/* PRICING CARDS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
         {/* FREE */}
         <div className={`p-6 rounded-2xl border backdrop-blur-xl flex flex-col justify-between transition-all ${currentPlan === "FREE" ? "bg-[#6366f1]/10 border-[#38bdf8]/40 shadow-[0_0_30px_rgba(56,189,248,0.15)]" : "bg-[#0b1329]/70 border-white/10"}`}>
@@ -195,7 +251,9 @@ export default function Billing() {
               <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" /><span><b>500</b> khách hàng danh bạ</span></li>
             </ul>
           </div>
-          <div className="mt-8 pt-4"><button disabled className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-[#64748b] cursor-not-allowed">Gói Tiêu Chuẩn</button></div>
+          <div className="mt-8 pt-4">
+            {renderPlanButton("FREE", "Gói Tiêu Chuẩn")}
+          </div>
         </div>
 
         {/* PRO */}
@@ -214,9 +272,7 @@ export default function Billing() {
             </ul>
           </div>
           <div className="mt-8 pt-4">
-            <button onClick={() => handleSubscribe("PRO")} disabled={currentPlan === "PRO" || submitting} className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#6366f1] to-[#38bdf8] text-white text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-40">
-              {currentPlan === "PRO" ? "Gói Hiện Tại Của Bạn" : "Nâng Cấp Gói Pro"}
-            </button>
+            {renderPlanButton("PRO", "Nâng Cấp Gói Pro")}
           </div>
         </div>
 
@@ -235,20 +291,18 @@ export default function Billing() {
             </ul>
           </div>
           <div className="mt-8 pt-4">
-            <button onClick={() => handleSubscribe("ENTERPRISE")} disabled={currentPlan === "ENTERPRISE" || submitting} className="w-full py-2.5 rounded-xl bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-40">
-              {currentPlan === "ENTERPRISE" ? "Gói Hiện Tại Của Bạn" : "Nâng Cấp Enterprise"}
-            </button>
+            {renderPlanButton("ENTERPRISE", "Nâng Cấp Enterprise")}
           </div>
         </div>
       </div>
 
-      {/* Checkout Modal */}
+      {/* CHECKOUT MODAL */}
       {checkoutModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#010409]/85 backdrop-blur-md">
           <div className="w-full max-w-lg bg-[#0b1329] border border-white/15 rounded-3xl p-6 shadow-2xl relative">
             <div className="flex justify-between items-center pb-4 border-b border-white/10 mb-4">
               <div className="flex items-center gap-2"><QrCode className="w-5 h-5 text-[#38bdf8]" /><h2 className="text-base font-bold text-white">Thanh Toán Gói {checkoutModal.plan}</h2></div>
-              <button onClick={() => setCheckoutModal(null)} className="text-[#64748b] hover:text-white"><X className="w-4 h-4" /></button>
+              <button onClick={() => setCheckoutModal(null)} className="text-[#64748b] hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
             </div>
 
             {pollingStatus === "PAID" ? (
@@ -263,10 +317,10 @@ export default function Billing() {
                   <div className="flex justify-between"><span className="text-[#94a3b8]">Ngân Hàng:</span><span className="text-white font-bold">{checkoutModal.bankInfo?.BANK_ID}</span></div>
                   <div className="flex justify-between"><span className="text-[#94a3b8]">Số Tài Khoản:</span><span className="text-white font-bold">{checkoutModal.bankInfo?.ACCOUNT_NO}</span></div>
                   <div className="flex justify-between"><span className="text-[#94a3b8]">Số Tiền:</span><span className="text-emerald-400 font-bold">{checkoutModal.amount?.toLocaleString()} VNĐ</span></div>
-                  <div className="flex justify-between items-center"><span className="text-[#94a3b8]">Nội Dung CK:</span><button onClick={() => copyText(checkoutModal.orderCode)} className="text-[#38bdf8] font-bold flex items-center gap-1">{checkoutModal.orderCode} {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}</button></div>
+                  <div className="flex justify-between items-center"><span className="text-[#94a3b8]">Nội Dung CK:</span><button onClick={() => copyText(checkoutModal.orderCode)} className="text-[#38bdf8] font-bold flex items-center gap-1 cursor-pointer">{checkoutModal.orderCode} {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}</button></div>
                 </div>
                 <div className="pt-2 border-t border-white/10">
-                  <button type="button" onClick={handleSimulatePaymentSuccess} className="w-full py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all flex items-center justify-center gap-1.5">
+                  <button type="button" onClick={handleSimulatePaymentSuccess} className="w-full py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer">
                     <Sparkles className="w-3.5 h-3.5" /><span> Xác nhận chuyển tiền </span>
                   </button>
                 </div>
