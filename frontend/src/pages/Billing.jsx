@@ -267,7 +267,7 @@ export default function Billing() {
                 </div>
                 <div className="pt-2 border-t border-white/10">
                   <button type="button" onClick={handleSimulatePaymentSuccess} className="w-full py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all flex items-center justify-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5" /><span>Mô Phỏng Chuyển Tiền Thành Công (Demo Nhanh)</span>
+                    <Sparkles className="w-3.5 h-3.5" /><span> Xác nhận chuyển tiền </span>
                   </button>
                 </div>
               </div>
