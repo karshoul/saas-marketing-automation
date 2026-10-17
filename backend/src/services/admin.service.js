@@ -2,6 +2,7 @@ import Tenant from '../models/Tenant.js';
 import User from '../models/User.js';
 import Order from '../models/Order.js';
 import { PLAN_CONFIGS } from './billing.service.js';
+import Membership from '../models/Membership.js';
 
 class AdminService {
   /**
@@ -94,16 +95,18 @@ class AdminService {
    * Xóa hẳn hoặc Xóa mềm Workspace (Tenant) khỏi cụm
    */
   async deleteTenant(tenantId) {
-  // 1. Xóa trực tiếp khỏi bảng Tenants
-  const tenant = await Tenant.findByIdAndDelete(tenantId);
+    // Cách xóa vĩnh viễn khỏi Database (Tránh lỗi Enum status)
+    const tenant = await Tenant.findByIdAndDelete(tenantId);
 
-  if (!tenant) throw new Error('Không tìm thấy Tenant để xóa.');
+    if (!tenant) {
+      throw new Error('Không tìm thấy Workspace để xóa.');
+    }
 
-  // 2. Xóa toàn bộ liên kết thành viên thuộc Workspace này
-  await Membership.deleteMany({ tenantId });
+    // Dọn dẹp liên kết thành viên thuộc Workspace này
+    await Membership.deleteMany({ tenantId });
 
-  return tenant;
-}
+    return tenant;
+  }
 
   /**
    * Chạy kịch bản Benchmark tải giả lập (Ablation Study) phục vụ báo cáo khóa luận
