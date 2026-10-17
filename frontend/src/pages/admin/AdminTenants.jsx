@@ -39,22 +39,48 @@ export default function AdminTenants() {
     fetchTenants();
   }, [fetchTenants]);
 
+  // Khóa / Mở khóa Tenant
   const handleToggleStatus = async (tenant) => {
+    const tenantId = tenant._id || tenant.id;
+    if (!tenantId) {
+      alert("Không tìm thấy ID của workspace này.");
+      return;
+    }
     const nextStatus = tenant.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
+
     try {
-      await api.put(`/admin/tenants/${tenant._id}/status`, { status: nextStatus });
+      await api.put(`/admin/tenants/${tenantId}/status`, { status: nextStatus });
+      setMsg(`Đã ${nextStatus === "SUSPENDED" ? "khóa" : "mở khóa"} workspace ${tenant.name} thành công!`);
       fetchTenants();
-    } catch {
-      alert("Không thể cập nhật trạng thái tenant.");
+      setTimeout(() => setMsg(""), 3000);
+    } catch (err) {
+      console.warn("Lỗi PUT status, thử gửi PATCH...", err);
+      try {
+        await api.patch(`/admin/tenants/${tenantId}/status`, { status: nextStatus });
+        setMsg(`Đã ${nextStatus === "SUSPENDED" ? "khóa" : "mở khóa"} workspace ${tenant.name} thành công!`);
+        fetchTenants();
+        setTimeout(() => setMsg(""), 3000);
+      } catch (innerErr) {
+        console.error("Lỗi cập nhật trạng thái tenant:", innerErr);
+        alert(innerErr.response?.data?.message || "Không thể cập nhật trạng thái tenant.");
+      }
     }
   };
 
+  // Cập nhật Gói Cước & Quota
   const handleSavePlan = async (e) => {
     e.preventDefault();
     if (!editingTenant) return;
+
+    const tenantId = editingTenant._id || editingTenant.id;
+    if (!tenantId) {
+      alert("Không tìm thấy ID workspace để cập nhật gói.");
+      return;
+    }
+
     setActionLoading(true);
     try {
-      await api.put(`/admin/tenants/${editingTenant._id}/plan`, {
+      await api.put(`/admin/tenants/${tenantId}/plan`, {
         plan: selectedPlan,
         customQuota: Number(customQuota)
       });
@@ -62,15 +88,17 @@ export default function AdminTenants() {
       setEditingTenant(null);
       fetchTenants();
       setTimeout(() => setMsg(""), 3000);
-    } catch {
-      alert("Lỗi điều chỉnh gói cước.");
+    } catch (err) {
+      console.error("Lỗi điều chỉnh gói cước:", err);
+      alert(err.response?.data?.message || "Lỗi điều chỉnh gói cước.");
     } finally {
       setActionLoading(false);
     }
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-300">
+    <div className="space-y-8 animate-in fade-in duration-300 font-sans">
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
@@ -92,13 +120,7 @@ export default function AdminTenants() {
         </button>
       </div>
 
-      {msg && (
-        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center justify-between">
-          <span>{msg}</span>
-          <button onClick={() => setMsg("")}><X className="w-4 h-4" /></button>
-        </div>
-      )}
-
+      {/* SỐ THỐNG KÊ TỔNG CỤM */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
         <div className="p-5 rounded-2xl bg-[#0b1329]/70 border border-white/10 backdrop-blur-xl">
           <div className="text-xs font-mono uppercase text-[#94a3b8] mb-1">Tổng Số Doanh Nghiệp</div>
@@ -109,7 +131,7 @@ export default function AdminTenants() {
         <div className="p-5 rounded-2xl bg-[#0b1329]/70 border border-white/10 backdrop-blur-xl">
           <div className="text-xs font-mono uppercase text-[#94a3b8] mb-1">Email Tiêu Thụ Toàn Cụm</div>
           <div className="text-2xl font-bold font-mono text-amber-400">
-            {globalStats.totalSent?.toLocaleString() || 0}
+            {(globalStats.totalSent || 0).toLocaleString()}
           </div>
           <div className="text-[11px] text-[#94a3b8] font-mono mt-1">Trong chu kỳ hiện tại</div>
         </div>
@@ -117,12 +139,21 @@ export default function AdminTenants() {
         <div className="p-5 rounded-2xl bg-[#0b1329]/70 border border-white/10 backdrop-blur-xl">
           <div className="text-xs font-mono uppercase text-[#94a3b8] mb-1">Tổng Dung Lượng Cấp Phát</div>
           <div className="text-2xl font-bold font-mono text-[#38bdf8]">
-            {globalStats.totalCapacity?.toLocaleString() || 0}
+            {(globalStats.totalCapacity || 0).toLocaleString()}
           </div>
           <div className="text-[11px] text-[#94a3b8] font-mono mt-1">Hạn ngạch cam kết SLA</div>
         </div>
       </div>
 
+      {/* THÔNG BÁO TẠM THỜI */}
+      {msg && (
+        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center justify-between">
+          <span>{msg}</span>
+          <button onClick={() => setMsg("")} className="cursor-pointer"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {/* BẢNG QUẢN LÝ TENANTS */}
       <div className="bg-[#0b1329]/70 border border-white/10 rounded-2xl p-6 backdrop-blur-xl space-y-4">
         <div className="flex items-center gap-3">
           <div className="relative flex-1 max-w-md">
@@ -150,16 +181,17 @@ export default function AdminTenants() {
             </thead>
             <tbody className="divide-y divide-white/5 font-mono">
               {tenants.map((t) => {
+                const tenantId = t._id || t.id;
                 const plan = (t.plan || t.subscriptionPlan || "FREE").toUpperCase();
                 const sent = t.usage?.emailsSentThisMonth || 0;
                 const limit = t.quotas?.monthlyEmailLimit || (plan === "PRO" ? 50000 : plan === "ENTERPRISE" ? 500000 : 3000);
                 const isSuspended = t.status === "SUSPENDED";
 
                 return (
-                  <tr key={t._id} className="hover:bg-white/[0.02] transition-colors">
+                  <tr key={tenantId} className="hover:bg-white/[0.02] transition-colors">
                     <td className="py-3.5 px-4">
                       <div className="font-sans font-semibold text-white">{t.name}</div>
-                      <div className="text-[10px] text-[#64748b]">slug: {t.slug} | id: {t._id}</div>
+                      <div className="text-[10px] text-[#64748b]">slug: {t.slug} | id: {tenantId}</div>
                     </td>
 
                     <td className="py-3.5 px-4">
@@ -205,7 +237,7 @@ export default function AdminTenants() {
 
                         <button
                           onClick={() => handleToggleStatus(t)}
-                          className={`p-1 rounded-lg transition-all cursor-pointer ${
+                          className={`p-1.5 rounded-lg transition-all cursor-pointer ${
                             isSuspended
                               ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
                               : "bg-red-500/10 text-red-400 hover:bg-red-500/20"
@@ -224,6 +256,7 @@ export default function AdminTenants() {
         </div>
       </div>
 
+      {/* MODAL CẤP QUYỀN / ĐỔI GÓI CƯỚC */}
       {editingTenant && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#010409]/80 backdrop-blur-md">
           <div className="w-full max-w-md bg-[#0b1329] border border-amber-500/30 rounded-2xl p-6 shadow-2xl space-y-4">
@@ -247,7 +280,7 @@ export default function AdminTenants() {
                     setSelectedPlan(p);
                     setCustomQuota(p === "PRO" ? 50000 : p === "ENTERPRISE" ? 500000 : 3000);
                   }}
-                  className="w-full bg-[#020617] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-400"
+                  className="w-full bg-[#020617] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-400 cursor-pointer"
                 >
                   <option value="FREE">FREE STARTER (3,000 emails)</option>
                   <option value="PRO">PRO AUTOMATION (50,000 emails)</option>
