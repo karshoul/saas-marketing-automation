@@ -30,7 +30,7 @@ const NAV_ITEMS = [
   { label: "Chiến Dịch Gửi", path: "/campaigns", icon: Send, roles: ["OWNER", "ADMIN", "MEMBER"] },
   { label: "Kịch Bản Tự Động", path: "/automations", icon: GitFork, roles: ["OWNER", "ADMIN", "MEMBER"] },
   { label: "Gói Cước & Thanh Toán", path: "/billing", icon: CreditCard, roles: ["OWNER"] },
-  { label: "Trạm Hàng Đợi (Queue)", path: "/queue-monitor", icon: Cpu, badge: "P(t)", roles: ["OWNER", "ADMIN", "MEMBER"] },
+  // { label: "Trạm Hàng Đợi (Queue)", path: "/queue-monitor", icon: Cpu, badge: "P(t)", roles: ["OWNER", "ADMIN", "MEMBER"] },
   { label: "Báo Cáo & Telemetry", path: "/analytics", icon: BarChart3, roles: ["OWNER", "ADMIN", "MEMBER"] },
   { label: "Quản Lý Thành Viên", path: "/members", icon: Users, roles: ["OWNER", "ADMIN", "MEMBER"] },
 ];
