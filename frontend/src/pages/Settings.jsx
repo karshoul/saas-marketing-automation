@@ -302,8 +302,8 @@ export default function Settings() {
               Mã Nhúng Pop-up Thu Nhập Voucher (`verdio.js`)
             </h2>
             <p className="text-xs text-[#94a3b8] mt-1 leading-relaxed">
-              Sao chép thẻ `<script>` bên dưới và dán vào trước thẻ `</body>` trên website cửa hàng của bạn. Pop-up sẽ tự động xuất hiện để thu thập Email khách hàng.
-            </p>
+  Sao chép thẻ {"<script>"} bên dưới và dán vào trước thẻ {"</body>"} trên website cửa hàng của bạn. Pop-up sẽ tự động xuất hiện để thu thập Email khách hàng.
+</p>
           </div>
 
           <div className="p-4 rounded-xl bg-[#020617] border border-white/10 space-y-3 font-mono text-xs">
