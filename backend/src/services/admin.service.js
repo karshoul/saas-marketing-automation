@@ -94,15 +94,16 @@ class AdminService {
    * Xóa hẳn hoặc Xóa mềm Workspace (Tenant) khỏi cụm
    */
   async deleteTenant(tenantId) {
-    const tenant = await Tenant.findByIdAndUpdate(
-      tenantId,
-      { $set: { status: 'DELETED', isDeleted: true } },
-      { new: true }
-    );
+  // 1. Xóa trực tiếp khỏi bảng Tenants
+  const tenant = await Tenant.findByIdAndDelete(tenantId);
 
-    if (!tenant) throw new Error('Không tìm thấy Tenant để xóa.');
-    return tenant;
-  }
+  if (!tenant) throw new Error('Không tìm thấy Tenant để xóa.');
+
+  // 2. Xóa toàn bộ liên kết thành viên thuộc Workspace này
+  await Membership.deleteMany({ tenantId });
+
+  return tenant;
+}
 
   /**
    * Chạy kịch bản Benchmark tải giả lập (Ablation Study) phục vụ báo cáo khóa luận
