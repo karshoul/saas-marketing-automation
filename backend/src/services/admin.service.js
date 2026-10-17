@@ -56,11 +56,13 @@ class AdminService {
    * Khóa / Mở khóa Tenant vi phạm hoặc spam
    */
   async toggleTenantStatus(tenantId, newStatus) {
-    const tenant = await Tenant.findById(tenantId);
-    if (!tenant) throw new Error('Không tìm thấy Tenant.');
+    const tenant = await Tenant.findByIdAndUpdate(
+      tenantId,
+      { $set: { status: newStatus } },
+      { new: true, runValidators: false }
+    );
 
-    tenant.status = newStatus;
-    await tenant.save();
+    if (!tenant) throw new Error('Không tìm thấy Tenant.');
     return tenant;
   }
 
@@ -68,21 +70,23 @@ class AdminService {
    * Thay đổi gói cước & Hạn mức Quota thủ công từ SuperAdmin
    */
   async updateTenantPlan(tenantId, { plan, customQuota }) {
-    const tenant = await Tenant.findById(tenantId);
-    if (!tenant) throw new Error('Không tìm thấy Tenant.');
-
     const planInfo = PLAN_CONFIGS[plan] || PLAN_CONFIGS.FREE;
 
-    tenant.plan = plan;
-    tenant.subscriptionPlan = plan;
-    tenant.quotas = {
-      maxContacts: planInfo.maxContacts,
-      monthlyEmailLimit: customQuota || planInfo.monthlyEmailLimit,
-      maxAutomations: planInfo.maxAutomations
-    };
+    const tenant = await Tenant.findByIdAndUpdate(
+      tenantId,
+      {
+        $set: {
+          plan: plan,
+          subscriptionPlan: plan,
+          'quotas.maxContacts': planInfo.maxContacts,
+          'quotas.monthlyEmailLimit': customQuota || planInfo.monthlyEmailLimit,
+          'quotas.maxAutomations': planInfo.maxAutomations
+        }
+      },
+      { new: true, runValidators: false }
+    );
 
-    tenant.markModified('quotas');
-    await tenant.save();
+    if (!tenant) throw new Error('Không tìm thấy Tenant.');
     return tenant;
   }
 
