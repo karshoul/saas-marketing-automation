@@ -9,10 +9,19 @@ const router = Router();
 router.use(authenticateUser);
 router.use(requireSuperAdmin);
 
-// Quản lý Tenants
+// Quản lý Tenants (Hỗ trợ cả PUT và PATCH)
 router.get('/tenants', adminController.getTenants);
+
 router.put('/tenants/:tenantId/status', adminController.updateStatus);
+router.patch('/tenants/:tenantId/status', adminController.updateStatus);
+
 router.put('/tenants/:tenantId/plan', adminController.updatePlan);
+router.patch('/tenants/:tenantId/plan', adminController.updatePlan);
+
+// Giám sát Hạ Tầng Queue & Worker Realtime
+if (adminController.getQueueStatus) {
+  router.get('/queue-status', adminController.getQueueStatus);
+}
 
 // Benchmark Engine (Ablation Study)
 router.post('/benchmark/run', adminController.triggerBenchmark);

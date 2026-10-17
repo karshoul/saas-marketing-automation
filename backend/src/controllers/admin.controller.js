@@ -16,8 +16,14 @@ class AdminController {
   // Khóa / Mở khóa Tenant
   async updateStatus(req, res, next) {
     try {
-      const { tenantId } = req.params;
+      // ✅ Lấy ID linh hoạt hỗ trợ cả :tenantId và :id từ Express Router
+      const tenantId = req.params.tenantId || req.params.id;
       const { status } = req.body;
+
+      if (!tenantId) {
+        return res.status(400).json({ success: false, message: 'Thiếu tenantId trong URL params.' });
+      }
+
       const tenant = await adminService.toggleTenantStatus(tenantId, status);
       return success(res, 'Cập nhật trạng thái Tenant thành công.', { tenant });
     } catch (error) {
@@ -28,8 +34,14 @@ class AdminController {
   // Thay đổi Gói cước và Quota thủ công
   async updatePlan(req, res, next) {
     try {
-      const { tenantId } = req.params;
+      // ✅ Lấy ID linh hoạt hỗ trợ cả :tenantId và :id từ Express Router
+      const tenantId = req.params.tenantId || req.params.id;
       const { plan, customQuota } = req.body;
+
+      if (!tenantId) {
+        return res.status(400).json({ success: false, message: 'Thiếu tenantId trong URL params.' });
+      }
+
       const tenant = await adminService.updateTenantPlan(tenantId, { plan, customQuota });
       return success(res, 'Điều chỉnh phân quyền gói cước thành công.', { tenant });
     } catch (error) {
