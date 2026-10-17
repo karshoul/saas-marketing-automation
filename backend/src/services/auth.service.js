@@ -29,7 +29,6 @@ import { TOKEN_EXPIRY } from '../constants/auth/tokens.js';
 
 import Membership from '../models/Membership.js';
 
-// Helper chuẩn hóa planSnapshot triệt để, ép kiểu primitive chống CastError
 const buildSafePlanSnapshot = (freePlan) => ({
   code: String(freePlan?.code || PLAN_CODES.FREE || 'FREE'),
   version: Number(freePlan?.version || 1),
@@ -51,29 +50,15 @@ const buildSafePlanSnapshot = (freePlan) => ({
 });
 
 class AuthService {
-  
-  /**
-   * 🔄 FLOW 1: REGISTER (Bọc toàn cục trong ACID Database Transaction)
-   */
-  /**
-   * 🔄 FLOW 1: REGISTER (Bọc toàn cục trong ACID Database Transaction)
-   */
+
   async register(registerDto, context) {
     const name = registerDto.name || registerDto.fullName;
     const companyName = registerDto.companyName || registerDto.workspaceName;
     const { email, password } = registerDto;
 
-    if (!name) {
-      throw new ApiError(400, 'Tên người dùng không được để trống.');
-    }
-
-    if (!companyName) {
-      throw new ApiError(400, 'Tên doanh nghiệp/Workspace không được để trống.');
-    }
-
-    if (!email) {
-      throw new ApiError(400, 'Địa chỉ email không được để trống.');
-    }
+    if (!name) throw new ApiError(400, 'Tên người dùng không được để trống.');
+    if (!companyName) throw new ApiError(400, 'Tên doanh nghiệp/Workspace không được để trống.');
+    if (!email) throw new ApiError(400, 'Địa chỉ email không được để trống.');
 
     const cleanEmail = email.toLowerCase().trim();
 
@@ -105,26 +90,20 @@ class AuthService {
     const topologyType = session.client?.topology?.description?.type || '';
     const isReplicaSet = topologyType.includes('ReplicaSet') || topologyType.includes('Sharded');
 
-    if (isReplicaSet) {
-      session.startTransaction();
-    }
-
+    if (isReplicaSet) session.startTransaction();
     const sessionOption = isReplicaSet ? { session } : {};
 
     try {
-      // 🔥 BƯỚC QUAN TRỌNG: Khởi tạo trước ObjectId cho User để thỏa mãn validation ownerId của Tenant
       const userId = new mongoose.Types.ObjectId();
 
-      // --- STEP A: Tạo Tenant với ownerId chính chủ ngay từ đầu ---
       const tenant = await tenantRepository.create({
         name: companyName,
         slug,
-        ownerId: userId, // 👈 Đã có ownerId, không còn bị lỗi required!
+        ownerId: userId,
         status: TENANT_STATUS.TRIAL
       }, sessionOption);
       const tenantId = tenant._id;
 
-      // --- STEP B: Tạo Subscription ---
       const trialDuration = 14 * 24 * 60 * 60 * 1000;
       await subscriptionRepository.create({
         tenantId,
@@ -137,10 +116,9 @@ class AuthService {
         planSnapshot: buildSafePlanSnapshot(freePlan)
       }, sessionOption);
 
-      // --- STEP C: Tạo User OWNER gắn với _id đã định nghĩa trước ---
       const hashedPassword = await hashPassword(password);
       const user = await userRepository.create({
-        _id: userId, // 👈 Gắn đúng ID đã gán làm ownerId ở trên
+        _id: userId,
         tenantId,
         name,
         email: cleanEmail,
@@ -149,7 +127,6 @@ class AuthService {
         isVerified: true
       }, sessionOption);
 
-      // --- STEP D: Tạo bản ghi Membership vai trò OWNER ---
       await Membership.create([{
         tenantId,
         userId,
@@ -157,7 +134,6 @@ class AuthService {
         status: 'ACTIVE'
       }], sessionOption);
 
-      // --- STEP E: Tạo Session & Token ---
       const tokenPayload = { id: userId, tenantId, role: user.role, email: user.email };
       const accessToken = signAccessToken(tokenPayload);
       const plainRefreshToken = signRefreshToken({ id: userId });
@@ -173,7 +149,6 @@ class AuthService {
         expiresAt: new Date(Date.now() + TOKEN_EXPIRY.REFRESH)
       }, sessionOption);
 
-      // --- STEP F: Ghi AuditLog ---
       await auditLogRepository.createLog({
         tenantId,
         userId,
@@ -185,9 +160,7 @@ class AuthService {
         metadata: { companyName, slug }
       }, sessionOption);
 
-      if (isReplicaSet) {
-        await session.commitTransaction();
-      }
+      if (isReplicaSet) await session.commitTransaction();
       session.endSession();
 
       return {
@@ -209,28 +182,16 @@ class AuthService {
       };
 
     } catch (error) {
-      if (isReplicaSet) {
-        await session.abortTransaction();
-      }
+      if (isReplicaSet) await session.abortTransaction();
       session.endSession();
       throw error;
     }
   }
 
-  /**
-   * 🔄 FLOW 2: LOGIN (Đảm bảo 100% luôn vào workspace gốc của chính mình)
-   */
-  /**
-   * 🔄 FLOW 2: LOGIN (Đảm bảo 100% luôn vào workspace gốc của chính mình kèm log truy vết)
-   */
   async login(loginDto, context) {
     const { email, password, deviceInfo, fingerprint } = loginDto;
     const cleanEmail = email.toLowerCase().trim();
 
-    console.log('\n================ [1. BẮT ĐẦU LOGIN] ================');
-    console.log('📧 Email đăng nhập:', cleanEmail);
-
-    // 1. Tìm user theo email
     const user = await userRepository.findByEmail(cleanEmail);
     if (!user) {
       await auditLogRepository.createLog({
@@ -244,9 +205,6 @@ class AuthService {
       throw new ApiError(401, 'Email hoặc mật khẩu không chính xác.');
     }
 
-    console.log('👤 Đã tìm thấy User ID:', user._id.toString());
-
-    // 2. Chặn lỗi khi tài khoản được tạo qua Google OAuth (không có password)
     if (!user.password) {
       throw new ApiError(
         400,
@@ -254,7 +212,6 @@ class AuthService {
       );
     }
 
-    // 3. So khớp mật khẩu an toàn
     const isPasswordValid = await comparePassword(password, user.password);
     if (!isPasswordValid) {
       await auditLogRepository.createLog({
@@ -270,45 +227,55 @@ class AuthService {
       throw new ApiError(401, 'Email hoặc mật khẩu không chính xác.');
     }
 
-    // 4. Tìm Workspace chính chủ bằng ownerId
-let ownedTenant = await tenantRepository.findOne({ ownerId: user._id });
+    let ownedTenant = await tenantRepository.findOne({ ownerId: user._id });
 
-// Nếu user chưa sở hữu Workspace nào, tự động tạo mới hoàn toàn
-if (!ownedTenant) {
-  const freePlan = await planRepository.findByCode(PLAN_CODES.FREE);
-  const companyName = `${user.name || 'My'}'s Workspace`;
-  const slug = cleanEmail.split('@')[0].replace(/[^a-z0-9]/g, '-') + '-' + Date.now().toString(36);
+    if (!ownedTenant) {
+      const freePlan = await planRepository.findByCode(PLAN_CODES.FREE);
+      const companyName = `${user.name || 'My'}'s Workspace`;
+      const slug = cleanEmail.split('@')[0].replace(/[^a-z0-9]/g, '-') + '-' + Date.now().toString(36);
 
-  ownedTenant = await tenantRepository.create({
-    name: companyName,
-    slug,
-    ownerId: user._id, // 🔥 Đã được lưu vào DB nhờ schema mới
-    status: TENANT_STATUS.TRIAL
-  });
+      ownedTenant = await tenantRepository.create({
+        name: companyName,
+        slug,
+        ownerId: user._id,
+        status: TENANT_STATUS.TRIAL
+      });
 
-  if (freePlan) {
-    const trialDuration = 14 * 24 * 60 * 60 * 1000;
-    await subscriptionRepository.create({
-      tenantId: ownedTenant._id,
-      planId: freePlan._id,
-      status: SUBSCRIPTION_STATUS.TRIAL,
-      billingCycle: BILLING_CYCLES.MONTHLY,
-      trialEnd: new Date(Date.now() + trialDuration),
-      nextBillingDate: new Date(Date.now() + trialDuration),
-      paymentProvider: PAYMENT_PROVIDERS.NONE,
-      planSnapshot: buildSafePlanSnapshot(freePlan)
-    });
-  }
+      if (freePlan) {
+        const trialDuration = 14 * 24 * 60 * 60 * 1000;
+        await subscriptionRepository.create({
+          tenantId: ownedTenant._id,
+          planId: freePlan._id,
+          status: SUBSCRIPTION_STATUS.TRIAL,
+          billingCycle: BILLING_CYCLES.MONTHLY,
+          trialEnd: new Date(Date.now() + trialDuration),
+          nextBillingDate: new Date(Date.now() + trialDuration),
+          paymentProvider: PAYMENT_PROVIDERS.NONE,
+          planSnapshot: buildSafePlanSnapshot(freePlan)
+        });
+      }
 
-  await userRepository.update(user._id, { tenantId: ownedTenant._id });
-}
+      await userRepository.update(user._id, { tenantId: ownedTenant._id });
+    }
 
-const tenantIdToUse = ownedTenant._id;
-const currentRole = ROLES.OWNER;
+    // 🛑 CHẶN ĐĂNG NHẬP NẾU WORKSPACE BỊ KHÓA (Trừ SuperAdmin)
+    if (ownedTenant && (ownedTenant.status === 'SUSPENDED' || ownedTenant.status === TENANT_STATUS.SUSPENDED) && !user.isSuperAdmin) {
+      await auditLogRepository.createLog({
+        tenantId: ownedTenant._id,
+        userId: user._id,
+        email: cleanEmail,
+        action: AUDIT_ACTIONS.LOGIN,
+        ipAddress: context.ip,
+        userAgent: context.ua,
+        status: AUDIT_STATUS.FAILED,
+        metadata: { reason: 'TENANT_SUSPENDED' }
+      });
+      throw new ApiError(403, 'Không gian làm việc (Workspace) của bạn đã bị khóa. Vui lòng liên hệ Quản trị viên để biết thêm chi tiết.');
+    }
 
-    console.log('🔑 Workspace ID sẽ đưa vào Token (tenantIdToUse):', tenantIdToUse.toString());
+    const tenantIdToUse = ownedTenant._id;
+    const currentRole = ROLES.OWNER;
 
-    // Đảm bảo bảng Membership luôn có bản ghi OWNER chính thức cho workspace này
     await Membership.findOneAndUpdate(
       { tenantId: tenantIdToUse, userId: user._id },
       { role: ROLES.OWNER, status: 'ACTIVE' },
@@ -350,7 +317,6 @@ const currentRole = ROLES.OWNER;
     });
 
     const tenant = await tenantRepository.findById(tenantIdToUse);
-    console.log('================ [HOÀN TẤT LOGIN] =================\n');
 
     return {
       user: {
@@ -372,41 +338,28 @@ const currentRole = ROLES.OWNER;
     };
   }
 
-  /**
-   * 🔄 FLOW: LOGIN WITH GOOGLE (Đảm bảo 100% luôn vào workspace gốc của chính mình)
-   */
   async loginWithGoogle(credential, context) {
     try {
-      if (!credential) {
-        throw new ApiError(400, 'Mã Google Credential không được để trống.');
-      }
+      if (!credential) throw new ApiError(400, 'Mã Google Credential không được để trống.');
 
       const clientId = process.env.GOOGLE_CLIENT_ID;
-      if (!clientId) {
-        console.error('💥 [Google Auth]: GOOGLE_CLIENT_ID chưa được định nghĩa trong .env');
-        throw new ApiError(500, 'Cấu hình Google Client ID trên máy chủ bị thiếu.');
-      }
+      if (!clientId) throw new ApiError(500, 'Cấu hình Google Client ID trên máy chủ bị thiếu.');
 
       const client = new OAuth2Client(clientId);
-
       const ticket = await client.verifyIdToken({
         idToken: credential,
         audience: clientId
       });
 
       const payload = ticket.getPayload();
-      
       const email = payload?.email;
       const name = payload?.name || payload?.given_name || (email ? email.split('@')[0] : 'Google User');
       const googleId = payload?.sub;
       const picture = payload?.picture;
 
-      if (!email) {
-        throw new ApiError(400, 'Không thể trích xuất địa chỉ email từ mã xác thực Google.');
-      }
+      if (!email) throw new ApiError(400, 'Không thể trích xuất địa chỉ email từ mã xác thực Google.');
 
       const cleanEmail = email.toLowerCase().trim();
-
       const superAdminEmails = ["khuongnguyenbevis@gmail.com"];
       const isSystemAdmin = superAdminEmails.includes(cleanEmail);
 
@@ -414,9 +367,7 @@ const currentRole = ROLES.OWNER;
       let tenant;
 
       const freePlan = await planRepository.findByCode(PLAN_CODES.FREE);
-      if (!freePlan) {
-        throw new ApiError(500, 'Lỗi Core: Hệ thống chưa thực hiện Seeding gói FREE.');
-      }
+      if (!freePlan) throw new ApiError(500, 'Lỗi Core: Hệ thống chưa thực hiện Seeding gói FREE.');
 
       const session = await mongoose.startSession();
       const topologyType = session.client?.topology?.description?.type || '';
@@ -427,17 +378,14 @@ const currentRole = ROLES.OWNER;
 
       try {
         if (!user) {
-          // ================= TRƯỜNG HỢP 1: USER CHƯA TỒN TẠI (ĐĂNG KÝ MỚI QUA GOOGLE) =================
           const companyName = `${name}'s Workspace`;
           const slug = cleanEmail.split('@')[0].replace(/[^a-z0-9]/g, '-') + '-' + Date.now().toString(36);
-
-          // 🔥 Khởi tạo trước userId
           const newUserId = new mongoose.Types.ObjectId();
 
           tenant = await tenantRepository.create({
             name: companyName,
             slug,
-            ownerId: newUserId, // 👈 Gán ownerId ngay tại đây
+            ownerId: newUserId,
             status: TENANT_STATUS.TRIAL
           }, sessionOption);
 
@@ -453,7 +401,6 @@ const currentRole = ROLES.OWNER;
             planSnapshot: buildSafePlanSnapshot(freePlan)
           }, sessionOption);
 
-          // Tạo User định danh toàn cầu với _id đã khởi tạo trước
           user = await userRepository.create({
             _id: newUserId,
             name,
@@ -475,7 +422,6 @@ const currentRole = ROLES.OWNER;
           await tenantRepository.update(tenant._id, { ownerId: user._id }, sessionOption);
 
         } else {
-          // ================= TRƯỜNG HỢP 2: USER ĐÃ TỒN TẠI =================
           let ownedTenant = await tenantRepository.findOne({ ownerId: user._id });
           if (!ownedTenant) {
             const ownerMembership = await Membership.findOne({ userId: user._id, role: ROLES.OWNER, status: 'ACTIVE' });
@@ -487,7 +433,6 @@ const currentRole = ROLES.OWNER;
             }
           }
 
-          // Nếu user này hoàn toàn chưa có workspace riêng, tạo mới ngay lập tức
           if (!ownedTenant) {
             const companyName = `${user.name || name}'s Workspace`;
             const slug = cleanEmail.split('@')[0].replace(/[^a-z0-9]/g, '-') + '-' + Date.now().toString(36);
@@ -541,8 +486,12 @@ const currentRole = ROLES.OWNER;
         throw txnError;
       }
 
-      const currentRole = ROLES.OWNER;
+      // 🛑 CHẶN ĐĂNG NHẬP GOOGLE NẾU WORKSPACE BỊ KHÓA (Trừ SuperAdmin)
+      if (tenant && (tenant.status === 'SUSPENDED' || tenant.status === TENANT_STATUS.SUSPENDED) && !user.isSuperAdmin && !isSystemAdmin) {
+        throw new ApiError(403, 'Không gian làm việc (Workspace) của bạn đã bị khóa. Vui lòng liên hệ Quản trị viên để biết thêm chi tiết.');
+      }
 
+      const currentRole = ROLES.OWNER;
       const tokenPayload = {
         id: user._id,
         tenantId: tenant._id,
@@ -619,14 +568,9 @@ const currentRole = ROLES.OWNER;
       }
     });
 
-    return {
-      revokedSessionsCount: result.modifiedCount || 0
-    };
+    return { revokedSessionsCount: result.modifiedCount || 0 };
   }
 
-  /**
-   * 🔄 FLOW 3: REFRESH TOKEN
-   */
   async refreshAccessToken(plainRefreshToken, context) {
     if (!plainRefreshToken) {
       throw new ApiError(401, 'Yêu cầu không hợp lệ. Vắng mặt Refresh Token trong phiên.');
@@ -696,18 +640,13 @@ const currentRole = ROLES.OWNER;
     };
   }
 
-  /**
-   * 🔄 FLOW 4: LOGOUT
-   */
   async logout(userId, tenantId, plainRefreshToken, context) {
     let sessionRevoked = false;
 
     if (plainRefreshToken) {
       const tokenHash = hashRefreshToken(plainRefreshToken);
       const revokedSession = await sessionRepository.revokeByTokenHash(tokenHash);
-      if (revokedSession) {
-        sessionRevoked = true;
-      }
+      if (revokedSession) sessionRevoked = true;
     }
 
     await auditLogRepository.createLog({
@@ -717,22 +656,14 @@ const currentRole = ROLES.OWNER;
       ipAddress: context.ip,
       userAgent: context.ua,
       status: AUDIT_STATUS.SUCCESS,
-      metadata: { 
-        sessionRevoked,
-        loggedOutAt: new Date()
-      }
+      metadata: { sessionRevoked, loggedOutAt: new Date() }
     });
 
     return true;
   }
 
-  /**
-   * 🔄 FLOW 5: VERIFY EMAIL
-   */
   async verifyEmail(plainToken, context) {
-    if (!plainToken) {
-      throw new ApiError(400, 'Mã kích hoạt không được để trống.');
-    }
+    if (!plainToken) throw new ApiError(400, 'Mã kích hoạt không được để trống.');
 
     const tokenHash = hashVerificationToken(plainToken);
     const tokenDoc = await tokenRepository.findOne({ 
@@ -740,9 +671,7 @@ const currentRole = ROLES.OWNER;
       type: TOKEN_TYPES.VERIFY_EMAIL 
     });
 
-    if (!tokenDoc) {
-      throw new ApiError(400, 'Mã kích hoạt không hợp lệ hoặc đã được sử dụng.');
-    }
+    if (!tokenDoc) throw new ApiError(400, 'Mã kích hoạt không hợp lệ hoặc đã được sử dụng.');
 
     if (tokenDoc.expiresAt < new Date()) {
       await tokenRepository.delete(tokenDoc._id);
@@ -753,10 +682,7 @@ const currentRole = ROLES.OWNER;
     const topologyType = session.client?.topology?.description?.type || '';
     const isReplicaSet = topologyType.includes('ReplicaSet') || topologyType.includes('Sharded');
 
-    if (isReplicaSet) {
-      session.startTransaction();
-    }
-
+    if (isReplicaSet) session.startTransaction();
     const sessionOption = isReplicaSet ? { session } : {};
 
     try {
@@ -771,34 +697,24 @@ const currentRole = ROLES.OWNER;
         status: AUDIT_STATUS.SUCCESS
       }, sessionOption);
 
-      if (isReplicaSet) {
-        await session.commitTransaction();
-      }
+      if (isReplicaSet) await session.commitTransaction();
       session.endSession();
 
       return true;
     } catch (error) {
-      if (isReplicaSet) {
-        await session.abortTransaction();
-      }
+      if (isReplicaSet) await session.abortTransaction();
       session.endSession();
       throw error;
     }
   }
 
-  /**
-   * 🔄 FLOW 6: FORGOT PASSWORD
-   */
   async forgotPassword(email, context) {
     try {
-      if (!email) {
-        throw new ApiError(400, 'Địa chỉ email không được để trống.');
-      }
+      if (!email) throw new ApiError(400, 'Địa chỉ email không được để trống.');
 
       const cleanEmail = email.toLowerCase().trim();
       const user = await userRepository.findByEmail(cleanEmail);
 
-      // Nếu không tìm thấy user, trả về true luôn để tránh bị scan dò email (Security Best Practice)
       if (!user) {
         await auditLogRepository.createLog({
           email: cleanEmail,
@@ -811,21 +727,16 @@ const currentRole = ROLES.OWNER;
         return true;
       }
 
-      // 1. Xóa các token reset cũ nếu có
       await tokenRepository.deleteMany({
         userId: user._id,
         type: TOKEN_TYPES.PASSWORD_RESET
       });
 
-      // 2. Tạo token ngẫu nhiên và mã hóa
       const plainResetToken = crypto.randomBytes(32).toString('hex');
       const tokenHash = hashVerificationToken(plainResetToken);
-      
-      // Fallback 15 phút nếu TOKEN_EXPIRY.PASSWORD_RESET không tồn tại
       const expiryDuration = TOKEN_EXPIRY?.PASSWORD_RESET || (15 * 60 * 1000);
       const expiresAt = new Date(Date.now() + expiryDuration);
 
-      // 3. Lưu token vào DB
       await tokenRepository.create({
         userId: user._id,
         tokenHash,
@@ -833,7 +744,6 @@ const currentRole = ROLES.OWNER;
         expiresAt
       });
 
-      // 4. Ghi Audit Log
       await auditLogRepository.createLog({
         tenantId: user.tenantId,
         userId: user._id,
@@ -845,7 +755,6 @@ const currentRole = ROLES.OWNER;
         metadata: { expiresAt }
       });
 
-      // 5. Gửi email
       emailService.sendPasswordResetEmail({
         email: cleanEmail,
         name: user.name,
@@ -859,13 +768,8 @@ const currentRole = ROLES.OWNER;
     }
   }
 
-  /**
-   * 🔄 FLOW 7: RESET PASSWORD
-   */
   async resetPassword(plainToken, newPassword, context) {
-    if (!plainToken) {
-      throw new ApiError(400, 'Mã khôi phục mật khẩu không được để trống.');
-    }
+    if (!plainToken) throw new ApiError(400, 'Mã khôi phục mật khẩu không được để trống.');
 
     const tokenHash = hashVerificationToken(plainToken);
     const tokenDoc = await tokenRepository.findOne({ 
@@ -901,13 +805,10 @@ const currentRole = ROLES.OWNER;
       ? await userRepository.findByIdWithPassword(tokenDoc.userId)
       : await userRepository.findById(tokenDoc.userId);
 
-    if (!user) {
-      throw new ApiError(404, 'Tài khoản người dùng liên kết không còn tồn tại.');
-    }
+    if (!user) throw new ApiError(404, 'Tài khoản người dùng liên kết không còn tồn tại.');
 
     const hashedPassword = await hashPassword(newPassword);
     
-    // Xử lý Transaction an toàn theo môi trường Mongo
     const session = await mongoose.startSession();
     const topologyType = session.client?.topology?.description?.type || '';
     const isReplicaSet = topologyType.includes('ReplicaSet') || topologyType.includes('Sharded');
@@ -944,19 +845,14 @@ const currentRole = ROLES.OWNER;
 
   async getCurrentUser(userId, tenantId) {
     const user = await userRepository.findById(userId);
-    if (!user) {
-      throw new ApiError(404, 'Không tìm thấy thông tin người dùng.');
-    }
+    if (!user) throw new ApiError(404, 'Không tìm thấy thông tin người dùng.');
 
     const tenant = tenantId ? await tenantRepository.findById(tenantId) : null;
 
-    // 🔥 TRUY VẤN MEMBERSHIP ĐỂ LẤY ROLE CHUẨN XÁC TRONG WORKSPACE HIỆN TẠI
     let currentRole = user.role;
     if (tenantId) {
       const membership = await Membership.findOne({ tenantId, userId });
-      if (membership) {
-        currentRole = membership.role;
-      }
+      if (membership) currentRole = membership.role;
     }
 
     return {
@@ -965,7 +861,7 @@ const currentRole = ROLES.OWNER;
         tenantId: tenantId || user.tenantId,
         name: user.name,
         email: user.email,
-        role: currentRole, // 👈 Trả về role chuẩn xác theo Workspace
+        role: currentRole,
         isSuperAdmin: Boolean(user.isSuperAdmin),
         isVerified: user.isVerified,
         avatar: user.avatar,

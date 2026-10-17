@@ -1,11 +1,12 @@
 import { verifyAccessToken } from '../utils/jwt.util.js';
 import ApiError from '../utils/apiError.util.js';
 import Membership from '../models/Membership.js';
+import Tenant from '../models/Tenant.js';
 import mongoose from 'mongoose';
 
 /**
- * Middleware gác cổng tối cao kiểm tra mã xác thực JWT Access Token
- * và tự động chuyển ngữ cảnh Workspace nếu có yêu cầu override hợp lệ
+ * Middleware gác cổng tối cao kiểm tra mã xác thực JWT Access Token,
+ * tự động chuyển ngữ cảnh Workspace và CHẶN các Workspace bị tạm khóa (SUSPENDED).
  */
 export const authenticateUser = async (req, res, next) => {
   try {
@@ -34,7 +35,6 @@ export const authenticateUser = async (req, res, next) => {
         mongoose.Types.ObjectId.isValid(requestedWorkspaceId) &&
         requestedWorkspaceId !== effectiveTenantId?.toString()
       ) {
-        // Xác minh xem User này có thực sự là thành viên ACTIVE trong Workspace đó không
         const membership = await Membership.findOne({
           tenantId: requestedWorkspaceId,
           userId: userId,
@@ -42,12 +42,18 @@ export const authenticateUser = async (req, res, next) => {
         });
 
         if (membership) {
-          // 🔥 Chuyển ngữ cảnh sang Workspace được chọn cùng vai trò thực tế trong nhà đó
           effectiveTenantId = requestedWorkspaceId;
           effectiveRole = membership.role;
         } else {
-          // Nếu cố tình gửi Workspace ID không thuộc về mình, bảo mật fallback về nhà gốc
           console.warn(`⚠️ [BẢO MẬT] User ${userId} cố truy cập trái phép Workspace: ${requestedWorkspaceId}`);
+        }
+      }
+
+      // 🛑 BỔ SUNG: Kiểm tra trạng thái Workspace trong DB (Bỏ qua đối với SuperAdmin)
+      if (effectiveTenantId && !decodedPayload.isSuperAdmin && effectiveRole !== 'SUPER_ADMIN') {
+        const tenantDoc = await Tenant.findById(effectiveTenantId).select('status');
+        if (tenantDoc && (tenantDoc.status === 'SUSPENDED' || tenantDoc.status === 'suspended')) {
+          return next(new ApiError(403, 'Không gian làm việc (Workspace) của bạn đã bị khóa. Vui lòng liên hệ Quản trị viên để biết thêm chi tiết.'));
         }
       }
       
@@ -56,7 +62,8 @@ export const authenticateUser = async (req, res, next) => {
         id: userId,
         tenantId: effectiveTenantId,
         role: effectiveRole,
-        email: decodedPayload.email
+        email: decodedPayload.email,
+        isSuperAdmin: Boolean(decodedPayload.isSuperAdmin)
       };
       
       next();
