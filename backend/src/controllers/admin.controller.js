@@ -16,7 +16,6 @@ class AdminController {
   // Khóa / Mở khóa Tenant
   async updateStatus(req, res, next) {
     try {
-      // ✅ Lấy ID linh hoạt hỗ trợ cả :tenantId và :id từ Express Router
       const tenantId = req.params.tenantId || req.params.id;
       const { status } = req.body;
 
@@ -34,7 +33,6 @@ class AdminController {
   // Thay đổi Gói cước và Quota thủ công
   async updatePlan(req, res, next) {
     try {
-      // ✅ Lấy ID linh hoạt hỗ trợ cả :tenantId và :id từ Express Router
       const tenantId = req.params.tenantId || req.params.id;
       const { plan, customQuota } = req.body;
 
@@ -61,20 +59,45 @@ class AdminController {
   }
 
   // Xóa Workspace (Tenant) toàn cụm
-async deleteTenant(req, res, next) {
-  try {
-    const tenantId = req.params.tenantId || req.params.id;
+  async deleteTenant(req, res, next) {
+    try {
+      const tenantId = req.params.tenantId || req.params.id;
 
-    if (!tenantId) {
-      return res.status(400).json({ success: false, message: 'Thiếu tenantId trong URL params.' });
+      if (!tenantId) {
+        return res.status(400).json({ success: false, message: 'Thiếu tenantId trong URL params.' });
+      }
+
+      const result = await adminService.deleteTenant(tenantId);
+      return success(res, 'Xóa Workspace khỏi cụm thành công.', result);
+    } catch (error) {
+      next(error);
     }
-
-    const result = await adminService.deleteTenant(tenantId);
-    return success(res, 'Xóa Workspace khỏi cụm thành công.', result);
-  } catch (error) {
-    next(error);
   }
-}
+
+  // Phát hành mã xác thực OTP khẩn cấp (Priority Queue - SLA <= 5s)
+  async sendOtpEmail(req, res, next) {
+    try {
+      const { toEmail, otpCode, tenantId } = req.body;
+
+      if (!toEmail || !otpCode) {
+        return res.status(400).json({ success: false, message: 'Thiếu email nhận hoặc mã OTP.' });
+      }
+
+      const result = await adminService.sendOtpEmail({
+        toEmail,
+        otpCode,
+        tenantId: tenantId || req.tenantId
+      });
+
+      return success(
+        res,
+        `Đã phát hành mã OTP [${otpCode}] tới ${toEmail}! Email đang được ưu tiên gửi tức thì (SLA <= 5s).`,
+        result
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export default new AdminController();

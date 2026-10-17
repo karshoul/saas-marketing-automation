@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import Order from '../models/Order.js';
 import { PLAN_CONFIGS } from './billing.service.js';
 import Membership from '../models/Membership.js';
+import { emailQueue } from '../queues/email.queue.js';
 
 class AdminService {
   /**
@@ -51,6 +52,36 @@ class AdminService {
       },
       globalStats
     };
+  }
+
+  async sendOtpEmail({ toEmail, otpCode, tenantId }) {
+    const job = await emailQueue.add(
+      'SEND_OTP_JOB',
+      {
+        tenantId,
+        to: toEmail,
+        subject: `[${otpCode}] Mã xác thực OTP khẩn cấp từ VERDIO`,
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; max-width: 480px; margin: 0 auto; background-color: #ffffff;">
+            <h2 style="color: #0f172a; font-size: 18px; margin-bottom: 8px;">Mã Xác Thực Khẩn Cấp (SLA &lt;= 5s)</h2>
+            <p style="color: #475569; font-size: 14px; margin-bottom: 20px;">Hệ thống VERDIO nhận được yêu cầu phát hành mã xác thực OTP giao dịch.</p>
+            <div style="background-color: #fffbe3; border: 1px solid #fde047; padding: 16px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
+              <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #d97706;">${otpCode}</span>
+            </div>
+            <p style="font-size: 12px; color: #94a3b8; margin: 0;">Mã có hiệu lực trong 5 phút. Vui lòng không cung cấp mã này cho người khác.</p>
+          </div>
+        `,
+        type: 'OTP',
+        slaSeconds: 5
+      },
+      {
+        priority: 1, // Mức ưu tiên cao nhất trong BullMQ
+        attempts: 3,
+        backoff: 1000
+      }
+    );
+
+    return { jobId: job.id, toEmail, otpCode };
   }
 
   /**

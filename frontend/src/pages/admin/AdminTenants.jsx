@@ -8,6 +8,7 @@ import {
   Unlock,
   Sliders,
   Trash2,
+  Zap,
   X
 } from "lucide-react";
 
@@ -21,6 +22,12 @@ export default function AdminTenants() {
   const [customQuota, setCustomQuota] = useState(50000);
   const [actionLoading, setActionLoading] = useState(false);
   const [msg, setMsg] = useState("");
+
+  // STATE DÀNH CHO KIỂM THỬ GỬI OTP KHẨN CẤP
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpEmail, setOtpEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("889900");
+  const [otpLoading, setOtpLoading] = useState(false);
 
   const fetchTenants = useCallback(async () => {
     setLoading(true);
@@ -116,6 +123,29 @@ export default function AdminTenants() {
     }
   };
 
+  // Phát hành mã OTP khẩn cấp (SLA <= 5s)
+  const handleSendOtpTest = async (e) => {
+    e.preventDefault();
+    if (!otpEmail) return alert("Vui lòng nhập Email nhận OTP!");
+
+    setOtpLoading(true);
+    try {
+      const res = await api.post("/admin/send-otp", {
+        toEmail: otpEmail,
+        otpCode: otpCode
+      });
+      setMsg(res.data?.message || `Đã phát hành mã OTP [${otpCode}] tới ${otpEmail}!`);
+      setShowOtpModal(false);
+      setOtpEmail("");
+      setTimeout(() => setMsg(""), 4000);
+    } catch (err) {
+      console.error("Lỗi gửi OTP:", err);
+      alert(err.response?.data?.message || "Không thể phát hành mã OTP.");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-300 font-sans">
       {/* HEADER */}
@@ -130,14 +160,25 @@ export default function AdminTenants() {
           </p>
         </div>
 
-        <button
-          onClick={fetchTenants}
-          disabled={loading}
-          className="p-2 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-xs text-white transition-all flex items-center gap-2 cursor-pointer"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-amber-400" : ""}`} />
-          <span>Làm mới cụm</span>
-        </button>
+        {/* NÚT BẤM THAO TÁC CỤM */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowOtpModal(true)}
+            className="p-2 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-xs text-amber-300 font-bold transition-all flex items-center gap-2 cursor-pointer"
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+            <span>Test Gửi OTP (SLA 5s)</span>
+          </button>
+
+          <button
+            onClick={fetchTenants}
+            disabled={loading}
+            className="p-2 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-xs text-white transition-all flex items-center gap-2 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-amber-400" : ""}`} />
+            <span>Làm mới cụm</span>
+          </button>
+        </div>
       </div>
 
       {/* SỐ THỐNG KÊ TỔNG CỤM */}
@@ -340,6 +381,68 @@ export default function AdminTenants() {
                   className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50"
                 >
                   {actionLoading ? "Đang lưu..." : "Xác Nhận Cấp"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL THỬ NGHIỆM GỬI OTP KHẨN CẤP */}
+      {showOtpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#010409]/80 backdrop-blur-md">
+          <div className="w-full max-w-md bg-[#0b1329] border border-amber-500/30 rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center pb-3 border-b border-white/10">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
+                Kiểm Thử Gửi OTP Khẩn Cấp (Priority Queue)
+              </h3>
+              <button onClick={() => setShowOtpModal(false)} className="text-[#64748b] hover:text-white cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendOtpTest} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-[#cbd5e1] font-semibold mb-1.5">Email Nhận OTP</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="nhap-email-nhan@gmail.com"
+                  value={otpEmail}
+                  onChange={(e) => setOtpEmail(e.target.value)}
+                  className="w-full bg-[#020617] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-[#475569] focus:outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#cbd5e1] font-semibold mb-1.5">Mã OTP Thử Nghiệm</label>
+                <input
+                  type="text"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value)}
+                  className="w-full bg-[#020617] border border-white/10 rounded-xl px-3 py-2 text-amber-400 font-mono font-bold text-center tracking-widest text-lg focus:outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-300">
+                ⚡ Email sẽ được chèn lên đầu hàng đợi BullMQ với <b>Priority = 1</b> và cam kết phát tán trong <b>3 - 5 giây</b>.
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOtpModal(false)}
+                  className="px-4 py-2 rounded-xl bg-white/[0.04] text-[#94a3b8] hover:text-white cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={otpLoading}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {otpLoading ? "Đang phát..." : "Phát Thư OTP Tức Thì"}
                 </button>
               </div>
             </form>
