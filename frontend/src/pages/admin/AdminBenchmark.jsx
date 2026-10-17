@@ -3,13 +3,9 @@ import api from "../../api/axios";
 import {
   FlaskConical,
   Play,
-  Zap,
-  TrendingDown,
   CheckCircle2,
   AlertTriangle,
-  Layers,
-  BarChart3,
-  Clock
+  BarChart3
 } from "lucide-react";
 
 export default function AdminBenchmark() {
@@ -51,7 +47,7 @@ export default function AdminBenchmark() {
         <button
           onClick={runSimulation}
           disabled={loading}
-          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.35)] disabled:opacity-50"
+          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.35)] disabled:opacity-50 cursor-pointer"
         >
           <Play className={`w-4 h-4 fill-black ${loading ? "animate-spin" : ""}`} />
           <span>{loading ? "Đang Bắn Tải..." : "Bắt Đầu Bài Test"}</span>
@@ -110,13 +106,13 @@ export default function AdminBenchmark() {
               Bảng Đối Soát Hiệu Năng Thực Nghiệm
             </h2>
             <span className="text-[11px] font-mono text-[#94a3b8]">
-              Thời gian thực thi: {new Date(results.executedAt).toLocaleTimeString()}
+              Thời gian thực thi: {results.executedAt ? new Date(results.executedAt).toLocaleTimeString("vi-VN") : "Vừa xong"}
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {results.comparison?.map((item, idx) => {
-              const isVerdio = item.algorithm.includes("VERDIO");
+              const isVerdio = item?.algorithm?.includes("VERDIO");
               return (
                 <div
                   key={idx}
@@ -133,7 +129,7 @@ export default function AdminBenchmark() {
                   )}
 
                   <div className="flex justify-between items-start">
-                    <h3 className="font-bold text-white text-sm">{item.algorithm}</h3>
+                    <h3 className="font-bold text-white text-sm">{item.algorithm || "Thuật toán"}</h3>
                     {isVerdio ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                     ) : (
@@ -179,8 +175,8 @@ export default function AdminBenchmark() {
           </div>
 
           <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200/90 leading-relaxed font-mono">
-            <b>Nhận xét thực nghiệm:</b> Cơ chế <b>VERDIO Adaptive P(t)</b> kết hợp công thức lão hóa động $\alpha \cdot T_{waiting}$ đã loại bỏ hoàn toàn tình trạng chết đói tác vụ (Starvation) của tác vụ Bulk, hạ tỷ lệ vi phạm SLA xuống <b>0.0%</b> trong khi vẫn duy trì chỉ số công bằng tài nguyên <b>Jain's Index = 0.97</b>.
-          </div>
+  <b>Nhận xét thực nghiệm:</b> Cơ chế <b>VERDIO Adaptive P(t)</b> kết hợp công thức lão hóa động {"$\\alpha \\cdot T_{waiting}$"} đã loại bỏ hoàn toàn tình trạng chết đói tác vụ (Starvation) của tác vụ Bulk, hạ tỷ lệ vi phạm SLA xuống <b>0.0%</b> trong khi vẫn duy trì chỉ số công bằng tài nguyên <b>Jain's Index = 0.97</b>.
+</div>
         </div>
       )}
     </div>
