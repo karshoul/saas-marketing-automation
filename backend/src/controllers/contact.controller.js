@@ -120,7 +120,7 @@ class ContactController {
         return res.status(400).json({ success: false, message: 'File Excel rỗng.' });
       }
 
-      // Hàm tìm giá trị cột linh hoạt (không phân biệt chữ hoa/thường hoặc ký tự bao quanh)
+      // Hàm tìm giá trị cột linh hoạt (chấp nhận "A (Họ và Tên)", "Họ và Tên", "Email",...)
       const getValue = (row, keywords) => {
         const key = Object.keys(row).find(k => 
           keywords.some(kw => k.toLowerCase().includes(kw.toLowerCase()))
@@ -130,7 +130,7 @@ class ContactController {
 
       const parsedContacts = rawData.map(row => {
         const email = String(getValue(row, ['email'])).trim();
-        const fullName = String(getValue(row, ['họ và tên', 'fullName', 'name', 'tên'])).trim();
+        const fullName = String(getValue(row, ['họ và tên', 'fullname', 'name', 'tên'])).trim();
         const phone = String(getValue(row, ['số điện thoại', 'phone', 'sđt'])).trim();
         const tagsRaw = getValue(row, ['thẻ nhãn', 'tag', 'tags']);
 
@@ -138,7 +138,27 @@ class ContactController {
           ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) 
           : [];
 
-        return { email, fullName, phone, tags };
+        // 💡 TÁCH "Nguyễn Văn An" THÀNH firstName = "Nguyễn" VÀ lastName = "Văn An"
+        let firstName = '';
+        let lastName = '';
+        if (fullName) {
+          const nameParts = fullName.trim().split(/\s+/);
+          if (nameParts.length === 1) {
+            firstName = nameParts[0];
+          } else {
+            firstName = nameParts[0]; // Họ
+            lastName = nameParts.slice(1).join(' '); // Tên đệm + Tên
+          }
+        }
+
+        return { 
+          email, 
+          firstName, 
+          lastName, 
+          fullName, 
+          phone, 
+          tags 
+        };
       }).filter(c => c.email && c.email.includes('@'));
 
       if (parsedContacts.length === 0) {
