@@ -6,7 +6,7 @@ const router = Router();
 
 router.use(authenticateUser);
 
-router.post('/suggest-subject', aiController.suggestSubjects);
-router.post('/generate-template', aiController.generateEmailTemplate);
+router.post('/suggest-subject', (req, res, next) => aiController.suggestSubjects(req, res, next));
+router.post('/generate-template', (req, res, next) => aiController.generateEmailTemplate(req, res, next));
 
 export default router;

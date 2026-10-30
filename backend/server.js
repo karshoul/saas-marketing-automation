@@ -34,7 +34,7 @@ import queueRouter from './src/routes/queue.routes.js';
 import billingRouter from './src/routes/billing.routes.js';
 import membershipRoutes from './src/routes/membership.routes.js';
 import publicRoutes from './src/routes/public.routes.js';
-import aiRoutes from './routes/ai.routes.js';
+import aiRoutes from './src/routes/ai.routes.js';
 
 const app = express();
 
