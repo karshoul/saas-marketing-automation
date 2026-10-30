@@ -120,19 +120,35 @@ class ContactController {
         return res.status(400).json({ success: false, message: 'File Excel rỗng.' });
       }
 
-      // Đọc dữ liệu linh hoạt (chấp nhận cả tiêu đề tiếng Việt lẫn tiếng Anh)
-      const parsedContacts = rawData.map(row => {
-        const email = row['Email'] || row['email'];
-        const fullName = row['Họ và Tên'] || row['Họ và tên'] || row['Name'] || row['fullName'] || '';
-        const phone = row['Số điện thoại'] || row['Phone'] || row['phone'] || '';
-        const tagsRaw = row['Thẻ nhãn'] || row['Tags'] || row['tags'] || '';
+      // Hàm tìm giá trị cột linh hoạt (không phân biệt chữ hoa/thường hoặc ký tự bao quanh)
+      const getValue = (row, keywords) => {
+        const key = Object.keys(row).find(k => 
+          keywords.some(kw => k.toLowerCase().includes(kw.toLowerCase()))
+        );
+        return key ? row[key] : '';
+      };
 
-        const tags = typeof tagsRaw === 'string' ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+      const parsedContacts = rawData.map(row => {
+        const email = String(getValue(row, ['email'])).trim();
+        const fullName = String(getValue(row, ['họ và tên', 'fullName', 'name', 'tên'])).trim();
+        const phone = String(getValue(row, ['số điện thoại', 'phone', 'sđt'])).trim();
+        const tagsRaw = getValue(row, ['thẻ nhãn', 'tag', 'tags']);
+
+        const tags = typeof tagsRaw === 'string' 
+          ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) 
+          : [];
 
         return { email, fullName, phone, tags };
-      }).filter(c => c.email && c.email.includes('@')); // Lọc bỏ hàng không có email hợp lệ
+      }).filter(c => c.email && c.email.includes('@'));
 
-      // Gọi lại chính hàm importContacts của contactService để lưu dữ liệu
+      if (parsedContacts.length === 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Không tìm thấy cột chứa Email hợp lệ trong file Excel. Vui lòng kiểm tra lại tiêu đề cột!' 
+        });
+      }
+
+      // Gọi service import
       const result = await contactService.importContacts(req.user.tenantId, parsedContacts);
       return success(res, `Đã import thành công ${parsedContacts.length} khách hàng từ file Excel.`, result);
     } catch (error) {
