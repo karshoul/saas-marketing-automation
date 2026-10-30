@@ -30,7 +30,9 @@ import {
   AlignRight,
   Sliders,
   ShieldCheck,
-  ExternalLink
+  Sparkles,
+  Wand2,
+  Bot
 } from "lucide-react";
 
 const CATEGORIES = [
@@ -169,11 +171,9 @@ function compileBlocksToHtml(blocks, styles) {
 </html>`;
 }
 
-// 🖼️ COMPONENT BẢN XEM TRƯỚC THU NHỎ (LIVE MINI THUMBNAIL)
 function TemplateThumbnail({ htmlContent, onPreview, onEdit }) {
   return (
     <div className="relative w-full h-52 bg-[#030712] overflow-hidden rounded-t-2xl border-b border-white/10 group cursor-pointer" onClick={onPreview}>
-      {/* Top browser dots mockup */}
       <div className="absolute top-0 left-0 right-0 h-5 bg-[#0b1329]/90 border-b border-white/5 flex items-center px-3 gap-1.5 z-20">
         <span className="w-1.5 h-1.5 rounded-full bg-red-500/60" />
         <span className="w-1.5 h-1.5 rounded-full bg-amber-500/60" />
@@ -181,7 +181,6 @@ function TemplateThumbnail({ htmlContent, onPreview, onEdit }) {
         <span className="text-[9px] font-mono text-[#64748b] ml-2 truncate">email-preview.html</span>
       </div>
 
-      {/* Scaled-down Email Container */}
       <div className="w-[600px] h-[720px] origin-top-left transform scale-[0.52] sm:scale-[0.54] ml-3 mt-7 pointer-events-none select-none">
         <iframe
           title="mini-preview"
@@ -192,10 +191,8 @@ function TemplateThumbnail({ htmlContent, onPreview, onEdit }) {
         />
       </div>
 
-      {/* Hiệu ứng bóng mờ chân thẻ */}
       <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#0b1329] via-[#0b1329]/70 to-transparent pointer-events-none" />
 
-      {/* Lớp phủ hành động nhanh khi rê chuột vào (Hover Quick Action Overlay) */}
       <div className="absolute inset-0 bg-[#020617]/75 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center gap-3 z-30">
         <button
           type="button"
@@ -251,6 +248,16 @@ export default function Templates() {
   const [selectedBlockId, setSelectedBlockId] = useState(null);
 
   const [quickPreviewTpl, setQuickPreviewTpl] = useState(null);
+
+  // ==========================================
+  // STATE MỚI CHO TRỢ LÝ AI GEMINI
+  // ==========================================
+  const [isAiOpen, setIsAiOpen] = useState(false);
+  const [aiTab, setAiTab] = useState("SUBJECT"); // "SUBJECT" | "GENERATOR"
+  const [aiTopic, setAiTopic] = useState("");
+  const [aiTone, setAiTone] = useState("Hấp dẫn");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSubjectSuggestions, setAiSubjectSuggestions] = useState([]);
 
   // 1. TẢI DỮ LIỆU
   const fetchTemplates = useCallback(async (page = 1) => {
@@ -445,6 +452,66 @@ export default function Templates() {
     }
   };
 
+  // ==========================================
+  // XỬ LÝ GỌI AI GEMINI (TIÊU ĐỀ & MẪU TỰ ĐỘNG)
+  // ==========================================
+  const handleFetchAiSubjects = async () => {
+    if (!aiTopic.trim()) {
+      alert("Vui lòng nhập chủ đề chiến dịch để AI gợi ý.");
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const res = await api.post("/ai/suggest-subject", {
+        topic: aiTopic,
+        tone: aiTone,
+        category: tplMeta.category
+      });
+      setAiSubjectSuggestions(res.data?.data || []);
+    } catch (err) {
+      console.error("Lỗi AI suggest subject:", err);
+      alert("Không thể kết nối đến Trợ lý AI.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleApplyAiSubject = (sug) => {
+    setTplMeta((prev) => ({
+      ...prev,
+      subject: sug.subject,
+      previewText: sug.previewText || prev.previewText
+    }));
+    setIsAiOpen(false);
+  };
+
+  const handleGenerateAiBlocks = async () => {
+    if (!aiTopic.trim()) {
+      alert("Vui lòng nhập mô tả chủ đề để AI thiết kế mẫu.");
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const res = await api.post("/ai/generate-template", {
+        topic: aiTopic,
+        category: tplMeta.category,
+        tone: aiTone
+      });
+      const data = res.data?.data;
+      if (data?.blocks && data.blocks.length > 0) {
+        setBlocks(data.blocks);
+        if (data.subject) setTplMeta((prev) => ({ ...prev, subject: data.subject }));
+        if (data.previewText) setTplMeta((prev) => ({ ...prev, previewText: data.previewText }));
+        setIsAiOpen(false);
+      }
+    } catch (err) {
+      console.error("Lỗi AI generate template:", err);
+      alert("Không thể sinh mẫu thư bằng AI.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6 font-sans select-none text-slate-300 relative">
       {/* HEADER */}
@@ -460,7 +527,7 @@ export default function Templates() {
             </span>
           </div>
           <p className="text-xs text-[#94a3b8]">
-            Thư viện mẫu email tương tác cao với bản xem trước hình ảnh trực quan và trình biên tập không cần code
+            Thư viện mẫu email tương tác cao tích hợp Trợ lý Gemini AI hỗ trợ gợi ý tiêu đề & tự động tạo nội dung
           </p>
         </div>
 
@@ -534,9 +601,7 @@ export default function Templates() {
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* 🖼️ LƯỚI DANH SÁCH THẺ MẪU THƯ CÓ BẢN XEM TRƯỚC TRỰC QUAN (LIVE PREVIEWS) */}
-      {/* ========================================================================= */}
+      {/* LƯỚI THẺ MẪU THƯ */}
       {loading && templates.length === 0 ? (
         <div className="py-20 text-center text-[#64748b] bg-[#0b1329]/30 rounded-2xl border border-white/5">
           <RefreshCw className="w-6 h-6 animate-spin text-[#38bdf8] mx-auto mb-3" />
@@ -557,14 +622,12 @@ export default function Templates() {
                 key={id}
                 className="bg-[#0b1329]/70 border border-white/10 hover:border-[#38bdf8]/40 rounded-2xl overflow-hidden backdrop-blur-xl transition-all duration-300 group flex flex-col justify-between shadow-xl hover:shadow-[0_10px_35px_rgba(56,189,248,0.1)]"
               >
-                {/* 1. KHUNG THUMBNAIL XEM TRƯỚC THỰC TẾ (Bản thu nhỏ) */}
                 <TemplateThumbnail
                   htmlContent={tpl.htmlContent}
                   onPreview={() => setQuickPreviewTpl(tpl)}
                   onEdit={() => handleOpenEdit(tpl)}
                 />
 
-                {/* 2. THÔNG TIN MẪU THƯ */}
                 <div className="p-4 space-y-2.5">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-[#38bdf8]/10 text-[#38bdf8] border border-[#38bdf8]/20">
@@ -588,7 +651,6 @@ export default function Templates() {
                   </div>
                 </div>
 
-                {/* 3. CHÂN THẺ TÁC VỤ */}
                 <div className="p-3 border-t border-white/5 bg-white/[0.01] flex items-center justify-between gap-2">
                   <button
                     onClick={() => setQuickPreviewTpl(tpl)}
@@ -629,7 +691,7 @@ export default function Templates() {
       )}
 
       {/* ================================================================= */}
-      {/* 🚀 MODAL TRÌNH THIẾT KẾ TRỰC QUAN NO-CODE (VISUAL EMAIL STUDIO)  */}
+      {/* 🚀 MODAL TRÌNH THIẾT KẾ TRỰC QUAN NO-CODE CÓ TRỢ LÝ AI GEMINI     */}
       {/* ================================================================= */}
       <AnimatePresence>
         {isEditorOpen && (
@@ -638,9 +700,9 @@ export default function Templates() {
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
-              className="w-full max-w-7xl h-[94vh] bg-[#0b1329] border border-white/15 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+              className="w-full max-w-7xl h-[94vh] bg-[#0b1329] border border-white/15 rounded-2xl shadow-2xl flex flex-col overflow-hidden relative"
             >
-              {/* Header */}
+              {/* Header Studio */}
               <div className="h-14 px-6 border-b border-white/10 flex items-center justify-between bg-[#060b18]/90 shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-[#38bdf8]/10 border border-[#38bdf8]/30 flex items-center justify-center text-[#38bdf8]">
@@ -655,6 +717,20 @@ export default function Templates() {
                 </div>
 
                 <div className="flex items-center gap-3">
+                  {/* NÚT KÍCH HOẠT TRỢ LÝ AI GEMINI */}
+                  <button
+                    type="button"
+                    onClick={() => setIsAiOpen(!isAiOpen)}
+                    className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg ${
+                      isAiOpen
+                        ? "bg-[#dffe64] text-black border-[#dffe64]"
+                        : "bg-[#dffe64]/10 text-[#dffe64] border-[#dffe64]/30 hover:border-[#dffe64]/60"
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4 animate-pulse" />
+                    <span>Trợ Lý AI Gemini</span>
+                  </button>
+
                   <div className="flex items-center gap-1 bg-[#020617] border border-white/10 rounded-lg p-0.5">
                     <button
                       type="button"
@@ -737,8 +813,8 @@ export default function Templates() {
                 </div>
               </div>
 
-              {/* KHU VỰC THIẾT KẾ (3 CỘT) */}
-              <div className="flex-1 flex overflow-hidden">
+              {/* KHU VỰC THIẾT KẾ CÓ TÍCH HỢP TRỢ LÝ AI SIDE-PANEL */}
+              <div className="flex-1 flex overflow-hidden relative">
                 {/* 1. THANH THÊM KHỐI */}
                 <div className="w-56 border-r border-white/10 bg-[#060b18]/90 p-3 space-y-4 overflow-y-auto shrink-0 select-none">
                   <div>
@@ -1038,16 +1114,6 @@ export default function Templates() {
                             />
                           </div>
                           <div>
-                            <label className="text-[#94a3b8] block mb-1 font-semibold">Liên Kết Khi Bấm Vào Ảnh (Tùy chọn)</label>
-                            <input
-                              type="text"
-                              value={activeBlock.link || ""}
-                              onChange={(e) => updateActiveBlock({ link: e.target.value })}
-                              placeholder="https://trang-dich-chien-dich.com"
-                              className="w-full bg-[#020617] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-[#38bdf8]"
-                            />
-                          </div>
-                          <div>
                             <label className="text-[#94a3b8] block mb-1 font-semibold">Bo Góc Ảnh ({activeBlock.radius || 12}px)</label>
                             <input
                               type="range"
@@ -1082,32 +1148,6 @@ export default function Templates() {
                               className="w-full bg-[#020617] border border-white/10 rounded-xl px-3 py-2 text-white outline-none focus:border-[#38bdf8]"
                             />
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-[10px] text-[#94a3b8] block mb-1">Màu Nút</label>
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="color"
-                                  value={activeBlock.bgColor}
-                                  onChange={(e) => updateActiveBlock({ bgColor: e.target.value })}
-                                  className="w-6 h-6 rounded border-0 bg-transparent cursor-pointer"
-                                />
-                                <span className="text-[10px] font-mono text-white">{activeBlock.bgColor}</span>
-                              </div>
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-[#94a3b8] block mb-1">Màu Chữ</label>
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="color"
-                                  value={activeBlock.textColor}
-                                  onChange={(e) => updateActiveBlock({ textColor: e.target.value })}
-                                  className="w-6 h-6 rounded border-0 bg-transparent cursor-pointer"
-                                />
-                                <span className="text-[10px] font-mono text-white">{activeBlock.textColor}</span>
-                              </div>
-                            </div>
-                          </div>
                         </div>
                       )}
 
@@ -1134,53 +1174,150 @@ export default function Templates() {
                           </div>
                         </div>
                       )}
-
-                      {["heading", "text", "badge"].includes(activeBlock.type) && (
-                        <div>
-                          <label className="text-[#94a3b8] block mb-1 font-semibold">Màu Chữ</label>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="color"
-                              value={activeBlock.color}
-                              onChange={(e) => updateActiveBlock({ color: e.target.value })}
-                              className="w-7 h-7 rounded border-0 bg-transparent cursor-pointer"
-                            />
-                            <span className="text-xs font-mono text-white">{activeBlock.color}</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {activeBlock.type === "card" && (
-                        <div className="space-y-3">
-                          <div>
-                            <label className="text-[#94a3b8] block mb-1 font-semibold">Nội Dung Khung</label>
-                            <textarea
-                              rows="3"
-                              value={activeBlock.content}
-                              onChange={(e) => updateActiveBlock({ content: e.target.value })}
-                              className="w-full bg-[#020617] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#38bdf8]"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-[#94a3b8] block mb-1">Màu Nền Khung</label>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="color"
-                                value={activeBlock.bgColor.startsWith("#") ? activeBlock.bgColor : "#1e1b4b"}
-                                onChange={(e) => updateActiveBlock({ bgColor: e.target.value })}
-                                className="w-7 h-7 rounded border-0 bg-transparent cursor-pointer"
-                              />
-                              <span className="text-xs font-mono text-white">{activeBlock.bgColor}</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
+
+                {/* ================================================================= */}
+                {/* 🌟 SLIDE-OVER DRAWER: TRỢ LÝ AI GEMINI THÔNG MINH                 */}
+                {/* ================================================================= */}
+                <AnimatePresence>
+                  {isAiOpen && (
+                    <motion.div
+                      initial={{ x: "100%" }}
+                      animate={{ x: 0 }}
+                      exit={{ x: "100%" }}
+                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                      className="absolute right-0 top-0 bottom-0 w-80 sm:w-96 bg-[#030712]/95 border-l border-[#dffe64]/30 backdrop-blur-2xl z-40 p-5 flex flex-col justify-between shadow-[-10px_0_30px_rgba(0,0,0,0.8)]"
+                    >
+                      <div className="space-y-4 overflow-y-auto pr-1 flex-1">
+                        <div className="flex justify-between items-center pb-3 border-b border-white/10">
+                          <div className="flex items-center gap-2">
+                            <Bot className="w-5 h-5 text-[#dffe64]" />
+                            <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                              Trợ Lý Gemini AI Studio
+                            </h3>
+                          </div>
+                          <button onClick={() => setIsAiOpen(false)} className="text-[#64748b] hover:text-white">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* TABS CHỌN TÍNH NĂNG AI */}
+                        <div className="grid grid-cols-2 gap-1.5 bg-white/[0.04] p-1 rounded-xl border border-white/10 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => setAiTab("SUBJECT")}
+                            className={`py-1.5 rounded-lg font-bold transition-all ${
+                              aiTab === "SUBJECT"
+                                ? "bg-[#dffe64] text-black shadow-md"
+                                : "text-[#94a3b8] hover:text-white"
+                            }`}
+                          >
+                            Gợi Ý Tiêu Đề
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAiTab("GENERATOR")}
+                            className={`py-1.5 rounded-lg font-bold transition-all ${
+                              aiTab === "GENERATOR"
+                                ? "bg-[#dffe64] text-black shadow-md"
+                                : "text-[#94a3b8] hover:text-white"
+                            }`}
+                          >
+                            Tự Động Tạo Mẫu
+                          </button>
+                        </div>
+
+                        {/* FORM DỮ LIỆU ĐẦU VÀO AI */}
+                        <div className="space-y-3 text-xs">
+                          <div>
+                            <label className="block text-[#cbd5e1] font-semibold mb-1">
+                              Chủ Đề / Nội Dung Chiến Dịch (*):
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Ví dụ: Khuyến mãi Black Friday giảm 50%"
+                              value={aiTopic}
+                              onChange={(e) => setAiTopic(e.target.value)}
+                              className="w-full bg-[#020617] border border-white/15 rounded-xl px-3 py-2 text-white outline-none focus:border-[#dffe64]"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[#cbd5e1] font-semibold mb-1">Phong Cách Giọng Văn:</label>
+                            <select
+                              value={aiTone}
+                              onChange={(e) => setAiTone(e.target.value)}
+                              className="w-full bg-[#020617] border border-white/15 rounded-xl px-3 py-2 text-white outline-none focus:border-[#dffe64]"
+                            >
+                              <option value="Hấp dẫn">Hấp dẫn & Thu hút</option>
+                              <option value="Chuyên nghiệp">Chuyên nghiệp & Trang trọng</option>
+                              <option value="Khuyến mãi">Thúc đẩy bán hàng (Urgency)</option>
+                              <option value="Thân thiện">Thân thiện & Gần gũi</option>
+                            </select>
+                          </div>
+
+                          {aiTab === "SUBJECT" ? (
+                            <button
+                              type="button"
+                              disabled={aiLoading || !aiTopic.trim()}
+                              onClick={handleFetchAiSubjects}
+                              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#dffe64] to-[#10b981] text-black text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+                            >
+                              <Wand2 className={`w-4 h-4 ${aiLoading ? "animate-spin" : ""}`} />
+                              <span>{aiLoading ? "AI Đang Suy Nghĩ..." : "Sinh 5 Tiêu Đề Gợi Ý"}</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={aiLoading || !aiTopic.trim()}
+                              onClick={handleGenerateAiBlocks}
+                              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#38bdf8] to-[#6366f1] text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+                            >
+                              <Sparkles className={`w-4 h-4 ${aiLoading ? "animate-spin" : ""}`} />
+                              <span>{aiLoading ? "AI Đang Lên Layout..." : "Dựng Mẫu Email Bằng AI"}</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* KẾT QUẢ GỢI Ý TIÊU ĐỀ AI */}
+                        {aiTab === "SUBJECT" && aiSubjectSuggestions.length > 0 && (
+                          <div className="space-y-2 pt-2 border-t border-white/10">
+                            <span className="text-[10px] font-mono text-[#dffe64] uppercase font-bold block">
+                              📌 Chọn tiêu đề bạn ưng ý nhất:
+                            </span>
+                            <div className="space-y-2">
+                              {aiSubjectSuggestions.map((sug, idx) => (
+                                <div
+                                  key={idx}
+                                  onClick={() => handleApplyAiSubject(sug)}
+                                  className="p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-[#dffe64]/50 cursor-pointer transition-all group"
+                                >
+                                  <p className="text-xs font-bold text-white group-hover:text-[#dffe64] leading-snug">
+                                    {sug.subject}
+                                  </p>
+                                  {sug.previewText && (
+                                    <p className="text-[10px] text-[#94a3b8] mt-1 line-clamp-1">
+                                      {sug.previewText}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-3 border-t border-white/10 text-[10px] text-[#64748b] text-center font-mono">
+                        Powered by Google Gemini 2.5 Flash
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
-              {/* Footer */}
+              {/* Footer Studio */}
               <div className="h-16 px-6 border-t border-white/10 bg-[#060b18] flex items-center justify-between shrink-0">
                 <span className="text-xs text-[#64748b]">
                   * Email được tự động biên dịch sang định dạng chuẩn Gmail, Outlook & Apple Mail khi lưu.

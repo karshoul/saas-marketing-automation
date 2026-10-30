@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../api/axios";
+import useAutoRefresh from "../hooks/useAutoRefresh";
 import {
   Send,
   Plus,
@@ -22,18 +23,11 @@ import {
   ArrowRight,
   ArrowLeft,
   FileCode2,
-  Clock,
   ExternalLink,
   Flame,
   LayoutGrid,
   List,
-  Hash,
-  Activity,
-  Calendar,
-  MousePointer,
-  MailCheck,
-  BarChart3,
-  Copy
+  Hash
 } from "lucide-react";
 
 const SEGMENT_OPTIONS = [
@@ -78,7 +72,6 @@ export default function Campaigns() {
   // Realtime Queue Monitor Modal
   const [monitoringCampaign, setMonitoringCampaign] = useState(null);
   const [queueStatus, setQueueStatus] = useState(null);
-  const pollIntervalRef = useRef(null);
 
   // ==========================================
   // 1. TẢI DỮ LIỆU TỪ BACKEND
@@ -227,35 +220,33 @@ export default function Campaigns() {
   // ==========================================
   // 3. THEO DÕI REAL-TIME BULLMQ TELEMETRY
   // ==========================================
-  const fetchQueueStatus = async (cid) => {
+  const activeMonitoringId = monitoringCampaign?._id || monitoringCampaign?.id;
+
+  const fetchQueueStatus = useCallback(async () => {
+    if (!activeMonitoringId) return;
     try {
-      const res = await api.get(`/campaigns/${cid}/queue-status`);
+      const res = await api.get(`/campaigns/${activeMonitoringId}/queue-status`);
       setQueueStatus(res.data?.data || res.data);
     } catch (err) {
-      console.error("Lỗi queue:", err);
+      console.error("Lỗi telemetry queue:", err);
     }
-  };
+  }, [activeMonitoringId]);
+
+  // Tự động làm mới telemetry mỗi 2.5s bằng custom hook (tự hủy timer khi unmount/đóng modal)
+  useAutoRefresh(fetchQueueStatus, 2500, !!monitoringCampaign);
 
   const handleOpenQueueMonitor = (camp, e) => {
     if (e) e.stopPropagation();
     setMonitoringCampaign(camp);
-    const cid = camp._id || camp.id;
-    fetchQueueStatus(cid);
-
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    pollIntervalRef.current = setInterval(() => {
-      fetchQueueStatus(cid);
-    }, 2500);
   };
 
   const handleCloseQueueMonitor = () => {
     setMonitoringCampaign(null);
     setQueueStatus(null);
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     fetchCampaigns(meta.page);
   };
 
-  // Tính toán KPI
+  // Tính toán KPI tổng quan
   const totalSent = useMemo(() => campaigns.reduce((acc, c) => acc + (c.stats?.sentCount || 0), 0), [campaigns]);
   const totalOpened = useMemo(() => campaigns.reduce((acc, c) => acc + (c.stats?.openedCount || 0), 0), [campaigns]);
   const activeProcessing = useMemo(() => campaigns.filter((c) => c.status === "PROCESSING" || c.status === "QUEUED").length, [campaigns]);
@@ -421,9 +412,7 @@ export default function Campaigns() {
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* 🚀 HIỂN THỊ DỮ LIỆU: VIEWMODE 1 (GRID CARDS TRỰC QUAN)                   */}
-      {/* ========================================================================= */}
+      {/* ================= VIEWMODE 1 (GRID CARDS) ================= */}
       {viewMode === "grid" && (
         <>
           {loading && campaigns.length === 0 ? (
@@ -455,9 +444,7 @@ export default function Campaigns() {
                     onClick={() => setInspectingCampaign(camp)}
                     className="bg-[#0b1329]/75 border border-white/10 hover:border-[#38bdf8]/40 rounded-2xl overflow-hidden backdrop-blur-xl transition-all duration-300 group flex flex-col justify-between shadow-xl hover:shadow-[0_10px_35px_rgba(56,189,248,0.12)] cursor-pointer"
                   >
-                    {/* Header Card với Mockup Mini Frame */}
                     <div className="relative h-44 bg-[#030712] overflow-hidden border-b border-white/10 group-hover:border-[#38bdf8]/30 transition-colors">
-                      {/* Browser Header Bar */}
                       <div className="absolute top-0 inset-x-0 h-6 bg-[#060b18]/90 border-b border-white/5 flex items-center justify-between px-3 z-10">
                         <div className="flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-red-500/60" />
@@ -484,7 +471,6 @@ export default function Campaigns() {
                         </span>
                       </div>
 
-                      {/* Mini Live Preview iframe */}
                       <div className="w-[600px] h-[550px] origin-top-left transform scale-[0.52] ml-3 mt-7 pointer-events-none select-none">
                         <iframe
                           title="mini-card-preview"
@@ -498,7 +484,6 @@ export default function Campaigns() {
                       <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-[#0b1329] via-[#0b1329]/80 to-transparent pointer-events-none" />
                     </div>
 
-                    {/* Body Card */}
                     <div className="p-4 space-y-3">
                       <div>
                         <div className="flex items-center justify-between gap-2">
@@ -514,7 +499,6 @@ export default function Campaigns() {
                         </p>
                       </div>
 
-                      {/* Thông tin Phân khúc & Người gửi */}
                       <div className="flex items-center justify-between text-[10px] font-mono text-[#94a3b8] bg-white/[0.02] border border-white/5 rounded-xl p-2">
                         <div className="flex items-center gap-1 truncate">
                           <Users className="w-3 h-3 text-[#38bdf8]" />
@@ -524,7 +508,6 @@ export default function Campaigns() {
                         <span className="text-emerald-400 font-bold">{sent.toLocaleString()} gửi</span>
                       </div>
 
-                      {/* Thanh Tiến Độ Phát Tán */}
                       <div className="space-y-1">
                         <div className="flex justify-between text-[10px] font-mono text-[#64748b]">
                           <span>Tiến độ: {sent} / {total}</span>
@@ -542,7 +525,6 @@ export default function Campaigns() {
                         </div>
                       </div>
 
-                      {/* Tỷ lệ tương tác Opens & Clicks */}
                       <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5 font-mono text-center">
                         <div className="p-1.5 rounded-lg bg-white/[0.02]">
                           <span className="text-[9px] text-[#64748b] block uppercase">Lượt Mở (Opens)</span>
@@ -555,7 +537,6 @@ export default function Campaigns() {
                       </div>
                     </div>
 
-                    {/* Footer Actions */}
                     <div
                       className="p-3 border-t border-white/5 bg-white/[0.01] flex items-center justify-between gap-2"
                       onClick={(e) => e.stopPropagation()}
@@ -605,9 +586,7 @@ export default function Campaigns() {
         </>
       )}
 
-      {/* ========================================================================= */}
-      {/* 🚀 HIỂN THỊ DỮ LIỆU: VIEWMODE 2 (BẢNG ĐO LƯỜNG TELEMETRY TABLE)          */}
-      {/* ========================================================================= */}
+      {/* ================= VIEWMODE 2 (TABLE) ================= */}
       {viewMode === "table" && (
         <div className="bg-[#0b1329]/70 border border-white/10 rounded-2xl backdrop-blur-xl overflow-hidden shadow-2xl">
           <div className="overflow-x-auto">
@@ -798,9 +777,7 @@ export default function Campaigns() {
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* 🔍 DRAWER KHÁM PHÁ CHI TIẾT CHIẾN DỊCH (CAMPAIGN INSPECTOR DRAWER)         */}
-      {/* ========================================================================= */}
+      {/* ================= DRAWER CHI TIẾT CHIẾN DỊCH ================= */}
       <AnimatePresence>
         {inspectingCampaign && (
           <>
@@ -820,7 +797,6 @@ export default function Campaigns() {
               className="fixed top-3 right-3 bottom-3 w-full max-w-xl bg-[#08110F]/95 border border-white/15 backdrop-blur-3xl rounded-[24px] shadow-[0_0_60px_rgba(0,0,0,0.8)] z-50 p-6 flex flex-col justify-between overflow-hidden font-mono"
             >
               <div className="space-y-5 overflow-y-auto pr-1 flex-1">
-                {/* Header Drawer */}
                 <div className="flex justify-between items-start border-b border-white/10 pb-4">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -840,7 +816,6 @@ export default function Campaigns() {
                   </button>
                 </div>
 
-                {/* 4 Thống kê Metrics */}
                 <div className="grid grid-cols-4 gap-2.5">
                   <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 text-center">
                     <span className="text-[9px] text-[#64748b] uppercase block">Tổng Nhận</span>
@@ -868,7 +843,6 @@ export default function Campaigns() {
                   </div>
                 </div>
 
-                {/* Thông tin cấu hình chi tiết */}
                 <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 space-y-2 text-xs">
                   <div className="flex justify-between pb-1.5 border-b border-white/5">
                     <span className="text-[#64748b]">Tên Người Gửi (From):</span>
@@ -888,7 +862,6 @@ export default function Campaigns() {
                   </div>
                 </div>
 
-                {/* Xem trước mẫu HTML thực tế */}
                 <div className="space-y-2">
                   <span className="text-[10px] text-[#64748b] uppercase tracking-wider block">
                     // Bản Xem Trước Mẫu Email Thực Tế
@@ -903,7 +876,6 @@ export default function Campaigns() {
                 </div>
               </div>
 
-              {/* Chân Drawer */}
               <div className="pt-4 border-t border-white/10 flex items-center gap-3">
                 {inspectingCampaign.status === "DRAFT" && (
                   <button
@@ -951,9 +923,7 @@ export default function Campaigns() {
         )}
       </AnimatePresence>
 
-      {/* ========================================================================= */}
-      {/* 🚀 MODAL CAMPAIGN WIZARD (TRÌNH TẠO 4 BƯỚC)                               */}
-      {/* ========================================================================= */}
+      {/* ================= MODAL CAMPAIGN WIZARD ================= */}
       <AnimatePresence>
         {isWizardOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#010409]/85 backdrop-blur-md">
@@ -1234,9 +1204,7 @@ export default function Campaigns() {
         )}
       </AnimatePresence>
 
-      {/* ========================================================================= */}
-      {/* 📡 MODAL GIÁM SÁT REAL-TIME QUEUE (BULLMQ HUD)                             */}
-      {/* ========================================================================= */}
+      {/* ================= MODAL GIÁM SÁT REAL-TIME QUEUE ================= */}
       <AnimatePresence>
         {monitoringCampaign && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#010409]/85 backdrop-blur-md">
