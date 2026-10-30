@@ -12,35 +12,50 @@ class AiController {
         return res.status(400).json({ success: false, message: 'Vui lòng nhập chủ đề chiến dịch.' });
       }
 
-      // Khi chưa gắn GEMINI_API_KEY -> Dùng Mock Generator thông minh
+      // Khi chưa gắn GEMINI_API_KEY -> Sinh Mock Data ĐỘNG theo Phong Cách (Tone)
       if (!apiKey) {
-        const mockSuggestions = [
-          {
-            subject: `🚀 [Đặc Quyền] ${topic} - Khám phá cơ hội x3 tăng trưởng!`,
-            previewText: 'Chương trình ưu đãi giới hạn dành riêng cho đối tác.'
-          },
-          {
-            subject: `💡 Bí quyết triển khai ${topic} hiệu quả cho {{company}}`,
-            previewText: 'Giải pháp tối ưu hóa quy trình làm việc đột phá.'
-          },
-          {
-            subject: `🔥 Đừng bỏ lỡ: Cập nhật mới nhất về ${topic}`,
-            previewText: 'Thông tin quan trọng được gửi trực tiếp đến bạn.'
-          },
-          {
-            subject: `✨ {{firstName}} ơi, giải pháp cho ${topic} đây rồi!`,
-            previewText: 'Kích hoạt ngay trải nghiệm công nghệ tự động.'
-          },
-          {
-            subject: `📩 Thông báo chính thức về chiến dịch ${topic}`,
-            previewText: 'Hướng dẫn chi tiết và lộ trình triển khai kèm theo.'
-          }
-        ];
-        return success(res, 'Gợi ý tiêu đề AI (Chế độ Demo)', mockSuggestions);
+        let mockSuggestions = [];
+
+        if (tone.includes('Thân thiện')) {
+          mockSuggestions = [
+            { subject: `👋 {{firstName}} ơi, bạn đã xem qua ${topic} chưa?`, previewText: 'Gửi bạn chút thông tin hay ho hôm nay nè!' },
+            { subject: `✨ Cùng {{company}} khám phá bí mật về ${topic}`, previewText: 'Góc chia sẻ trải nghiệm siêu thú vị dành riêng cho bạn.' },
+            { subject: `☕ Một chút cảm hứng từ ${topic} gửi tặng {{firstName}}`, previewText: 'Hi vọng thông điệp này mang lại niềm vui cho bạn.' },
+            { subject: `💌 Tin nhắn nhỏ: ${topic} đã sẵn sàng cho bạn rồi đấy!`, previewText: 'Xem ngay thông tin chi tiết bên trong nhé.' },
+            { subject: `🌟 Chào {{firstName}}, bất ngờ từ ${topic} đang chờ bạn`, previewText: 'Trải nghiệm mượt mà cùng giải pháp mới.' }
+          ];
+        } else if (tone.includes('Chuyên nghiệp')) {
+          mockSuggestions = [
+            { subject: `[Thông Báo] Lộ trình triển khai ${topic} cho {{company}}`, previewText: 'Tài liệu hướng dẫn và chiến lược tối ưu hóa quy trình.' },
+            { subject: `Báo cáo phân tích hiệu quả giải pháp ${topic}`, previewText: 'Cập nhật chỉ số tăng trưởng mới nhất từ hệ thống.' },
+            { subject: `Gửi {{firstName}}: Bản đề xuất hợp tác về ${topic}`, previewText: 'Giải pháp nâng cao năng suất dành cho doanh nghiệp.' },
+            { subject: `Chính thức ra mắt hệ thống ${topic} thế hệ mới`, previewText: 'Cam kết chất lượng và chuẩn hóa quy trình dịch vụ.' },
+            { subject: `Tối ưu hóa nguồn lực cùng dự án ${topic}`, previewText: 'Trải nghiệm công nghệ tự động hóa chuẩn doanh nghiệp.' }
+          ];
+        } else if (tone.includes('Thúc đẩy') || tone.includes('Urgency')) {
+          mockSuggestions = [
+            { subject: `🔥 [Còn 24H] Ưu đãi đặc quyền cho ${topic} sắp kết thúc!`, previewText: 'Nhanh tay kích hoạt trước khi thời hạn ưu đãi khép lại.' },
+            { subject: `⚡ Cảnh báo: Chỉ còn 50 suất trải nghiệm ${topic} cuối cùng!`, previewText: 'Cơ hội x3 tăng trưởng dành riêng cho {{firstName}}.' },
+            { subject: `🚨 Đừng bỏ lỡ! Kích hoạt ngay ${topic} hôm nay`, previewText: 'Đặc quyền giới hạn không lặp lại lần thứ hai.' },
+            { subject: `⏳ Đếm ngược: Nhận chiết khấu lớn nhất từ ${topic}`, previewText: 'Ưu đãi dành riêng cho đại diện {{company}}.' },
+            { subject: `💥 Giảm ngay 50% khi đăng ký ${topic} trong hôm nay!`, previewText: 'Xác nhận suất ưu đãi của bạn ngay lập tức.' }
+          ];
+        } else {
+          // Mặc định: Hấp dẫn & Thu hút
+          mockSuggestions = [
+            { subject: `🚀 [Đặc Quyền] ${topic} - Khám phá cơ hội x3 tăng trưởng!`, previewText: 'Chương trình ưu đãi giới hạn dành riêng cho đối tác.' },
+            { subject: `💡 Bí quyết triển khai ${topic} hiệu quả cho {{company}}`, previewText: 'Giải pháp tối ưu hóa quy trình làm việc đột phá.' },
+            { subject: `🔥 Đừng bỏ lỡ: Cập nhật mới nhất về ${topic}`, previewText: 'Thông tin quan trọng được gửi trực tiếp đến bạn.' },
+            { subject: `✨ {{firstName}} ơi, giải pháp cho ${topic} đây rồi!`, previewText: 'Kích hoạt ngay trải nghiệm công nghệ tự động.' },
+            { subject: `📩 Khám phá đột phá công nghệ mới từ ${topic}`, previewText: 'Hướng dẫn chi tiết và lộ trình triển khai kèm theo.' }
+          ];
+        }
+
+        return success(res, `Gợi ý tiêu đề AI [Demo - ${tone}]`, mockSuggestions);
       }
 
-      // Gọi Gemini API thật
-      const prompt = `Bạn là chuyên gia Email Marketing hàng đầu. Hãy gợi ý 5 tiêu đề email và 5 đoạn preheader (xem trước) bằng tiếng Việt cho chiến dịch thuộc phân loại ${category}, chủ đề: "${topic}", phong cách: "${tone}".
+      // Gọi Gemini API thật khi đã cấu hình GEMINI_API_KEY
+      const prompt = `Bạn là chuyên gia Email Marketing hàng đầu. Hãy gợi ý 5 tiêu đề email và 5 đoạn preheader (xem trước) bằng tiếng Việt cho chiến dịch thuộc phân loại ${category}, chủ đề: "${topic}", phong cách giọng văn chuẩn xác: "${tone}".
 Yêu cầu trả về duy nhất 1 mảng JSON thuần túy (không chứa ký tự Markdown \`\`\`json):
 [
   { "subject": "Tiêu đề 1", "previewText": "Đoạn xem trước 1" },
@@ -84,18 +99,18 @@ Yêu cầu trả về duy nhất 1 mảng JSON thuần túy (không chứa ký t
 
       if (!apiKey) {
         const mockBlocks = [
-          { id: `b-badge-${Date.now()}`, type: 'badge', text: 'THÔNG BÁO TỰ ĐỘNG', color: '#38bdf8', bgColor: 'rgba(56, 189, 248, 0.12)', align: 'center' },
-          { id: `b-heading-${Date.now()}`, type: 'heading', text: `Đột Phá Với ${topic}`, size: 22, color: '#ffffff', align: 'center' },
-          { id: `b-text-${Date.now()}`, type: 'text', content: `Xin chào {{firstName}},\n\nChúng tôi rất vui được mang đến giải pháp liên quan đến ${topic} dành riêng cho đại diện từ {{company}}. Với công nghệ tự động hóa tân tiến, quy trình của bạn sẽ đạt hiệu suất tối đa.`, size: 14, color: '#94a3b8', align: 'left' },
-          { id: `b-card-${Date.now()}`, type: 'card', content: `⚡ Tính năng trọng tâm: Trải nghiệm hệ thống xử lý ${topic} không giới hạn với tốc độ phản hồi cực nhanh.`, bgColor: 'rgba(99, 102, 241, 0.08)', borderColor: 'rgba(99, 102, 241, 0.25)', textColor: '#c7d2fe' },
-          { id: `b-btn-${Date.now()}`, type: 'button', text: 'Kích Hoạt Ngay →', link: 'https://verdio.io', bgColor: '#38bdf8', textColor: '#020617', align: 'center', radius: 10 },
+          { id: `b-badge-${Date.now()}`, type: 'badge', text: tone.toUpperCase(), color: '#38bdf8', bgColor: 'rgba(56, 189, 248, 0.12)', align: 'center' },
+          { id: `b-heading-${Date.now()}`, type: 'heading', text: `Khám Phá ${topic}`, size: 22, color: '#ffffff', align: 'center' },
+          { id: `b-text-${Date.now()}`, type: 'text', content: `Xin chào {{firstName}},\n\nChúng tôi rất vui được mang đến thông điệp về ${topic} dành riêng cho bạn tại {{company}}.`, size: 14, color: '#94a3b8', align: 'left' },
+          { id: `b-card-${Date.now()}`, type: 'card', content: `⚡ Thông điệp chính: Trải nghiệm giải pháp ${topic} với phong cách ${tone}.`, bgColor: 'rgba(99, 102, 241, 0.08)', borderColor: 'rgba(99, 102, 241, 0.25)', textColor: '#c7d2fe' },
+          { id: `b-btn-${Date.now()}`, type: 'button', text: 'Khám Phá Ngay →', link: 'https://verdio.io', bgColor: '#38bdf8', textColor: '#020617', align: 'center', radius: 10 },
           { id: `b-div-${Date.now()}`, type: 'divider', color: '#1e293b' },
           { id: `b-footer-${Date.now()}`, type: 'footer', text: 'Thư này được gửi tự động đến {{email}}.', unsubText: 'Hủy đăng ký', color: '#64748b' }
         ];
 
         return success(res, 'AI thiết kế mẫu thư (Chế độ Demo)', {
-          subject: `🚀 Khám phá giải pháp ${topic}`,
-          previewText: 'Thông điệp tối ưu hóa quy trình tự động',
+          subject: `🚀 Giải pháp ${topic}`,
+          previewText: 'Thông điệp tối ưu tự động',
           blocks: mockBlocks
         });
       }
