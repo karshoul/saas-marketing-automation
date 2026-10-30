@@ -1,3 +1,5 @@
+import XLSX from 'xlsx';
+import Contact from '../models/Contact.js';
 import contactService from '../services/contact.service.js';
 import { success } from '../utils/response.util.js';
 
@@ -47,11 +49,89 @@ class ContactController {
     }
   }
 
+  // Import dạng JSON Array sẵn có của bạn
   async import(req, res, next) {
     try {
       const { contacts } = req.body;
       const result = await contactService.importContacts(req.user.tenantId, contacts);
       return success(res, 'Import danh sách khách hàng thành công.', result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // =========================================================================
+  // BỔ SUNG 1: Bấm Tải về danh bạ (EXPORT FILE EXCEL)
+  // =========================================================================
+  async exportExcel(req, res, next) {
+    try {
+      const tenantId = req.user.tenantId;
+
+      // Lấy tất cả danh bạ của Tenant hiện tại
+      const contacts = await Contact.find({ tenantId }).lean();
+
+      // Định dạng dữ liệu các cột trong bảng Excel
+      const dataToExport = contacts.map((c, index) => ({
+        'STT': index + 1,
+        'Họ và Tên': c.fullName || c.name || '',
+        'Email': c.email || '',
+        'Số điện thoại': c.phone || '',
+        'Thẻ nhãn': Array.isArray(c.tags) ? c.tags.join(', ') : (c.tags || ''),
+        'Trạng thái': c.status || 'Active',
+        'Ngày tạo': c.createdAt ? new Date(c.createdAt).toLocaleDateString('vi-VN') : ''
+      }));
+
+      // Tạo workbook Excel bằng XLSX
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Danh_Ba_Khach_Hang');
+
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+      // Set header trả về file tải về cho trình duyệt
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=Danh_Ba_VERDIO_${Date.now()}.xlsx`);
+
+      return res.send(buffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // =========================================================================
+  // BỔ SUNG 2: Upload file `.xlsx` / `.csv` từ máy tính lên (IMPORT FILE EXCEL)
+  // (Yêu cầu Route dùng middleware multer: upload.single('file'))
+  // =========================================================================
+  async importExcel(req, res, next) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: 'Vui lòng chọn file Excel để tải lên.' });
+      }
+
+      // Đọc file từ Buffer
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+      if (!rawData || rawData.length === 0) {
+        return res.status(400).json({ success: false, message: 'File Excel rỗng.' });
+      }
+
+      // Đọc dữ liệu linh hoạt (chấp nhận cả tiêu đề tiếng Việt lẫn tiếng Anh)
+      const parsedContacts = rawData.map(row => {
+        const email = row['Email'] || row['email'];
+        const fullName = row['Họ và Tên'] || row['Họ và tên'] || row['Name'] || row['fullName'] || '';
+        const phone = row['Số điện thoại'] || row['Phone'] || row['phone'] || '';
+        const tagsRaw = row['Thẻ nhãn'] || row['Tags'] || row['tags'] || '';
+
+        const tags = typeof tagsRaw === 'string' ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+        return { email, fullName, phone, tags };
+      }).filter(c => c.email && c.email.includes('@')); // Lọc bỏ hàng không có email hợp lệ
+
+      // Gọi lại chính hàm importContacts của contactService để lưu dữ liệu
+      const result = await contactService.importContacts(req.user.tenantId, parsedContacts);
+      return success(res, `Đã import thành công ${parsedContacts.length} khách hàng từ file Excel.`, result);
     } catch (error) {
       next(error);
     }

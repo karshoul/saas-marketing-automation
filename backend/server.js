@@ -16,6 +16,7 @@ import { seedPlans } from './src/config/plans.config.js';
 import { initEmailWorker } from './src/queues/email.queue.js';
 import { initAutomationWorker } from './src/queues/automation.queue.js';
 import workerScaler from './src/schedulers/worker.scaler.js';
+import { startPriorityAgingScanner } from './src/utils/aging.scanner.js'; // 👈 1. IMPORT
 
 // 3. Middlewares
 import { globalErrorHandler } from './src/middleware/error.middleware.js';
@@ -32,7 +33,7 @@ import campaignRoutes from './src/routes/campaign.routes.js';
 import queueRouter from './src/routes/queue.routes.js';
 import billingRouter from './src/routes/billing.routes.js';
 import membershipRoutes from './src/routes/membership.routes.js';
-import publicRoutes from './src/routes/public.routes.js'; // 👈 Public API Route
+import publicRoutes from './src/routes/public.routes.js';
 
 const app = express();
 
@@ -142,6 +143,9 @@ const startServer = async () => {
         maxConcurrency: 20,
         checkIntervalMs: 3000
       });
+
+      // 🚀 2. KÍCH HOẠT AGING SCANNER QUÉT ĐỊNH KỲ (Mỗi 2 giây)
+      startPriorityAgingScanner(2000);
     } else {
       console.log('🛡️ [Workers Hub]: Chế độ API-Only. Background Workers & Auto-scaler đã được vô hiệu hóa để tiết kiệm Redis requests.');
     }

@@ -78,11 +78,11 @@ class CampaignService {
     const slaConfig = {
       FREE: { slaSeconds: 60, weightTier: 0, priority: 10 },
       PRO: { slaSeconds: 15, weightTier: 5, priority: 5 },
-      ENTERPRISE: { slaSeconds: 5, weightTier: 10, priority: 1 }
+      ENTERPRISE: { slaSeconds: 5, weightTier: 10, priority: 2 } // Ưu tiên cao nhất của Mkt là P = 2
     };
     const tierConfig = slaConfig[plan] || slaConfig.FREE;
 
-    // 2. Lọc danh sách người nhận theo Trạng thái, Phân khúc và Thẻ nhãn
+    // 2. Lọc danh sách người nhận
     const contactFilter = { tenantId, status: 'SUBSCRIBED' };
     
     if (campaign.targetSegment && campaign.targetSegment !== 'ALL') {
@@ -93,16 +93,14 @@ class CampaignService {
       contactFilter.tags = { $in: campaign.targetTags };
     }
 
-    // Lấy đủ trường để cá nhân hóa
     const recipients = await Contact.find(contactFilter).select('email firstName lastName company');
 
     if (recipients.length === 0) {
       throw new ApiError(400, 'Không tìm thấy khách hàng nào phù hợp với điều kiện để gửi chiến dịch.');
     }
 
-    // 3. Chuẩn bị Bulk Jobs cho BullMQ
+    // 3. Chuẩn bị Bulk Jobs cho BullMQ (ĐÃ BỔ SUNG createdAt VÀ type)
     const jobs = recipients.map((contact) => {
-      // Thay thế tất cả các biến động (Merge Tags)
       let personalizedHtml = (campaign.contentHtml || '')
         .replace(/{{firstName}}/g, contact.firstName || 'Quý khách')
         .replace(/{{lastName}}/g, contact.lastName || '')
@@ -120,6 +118,8 @@ class CampaignService {
           tenantId: tenantId.toString(),
           campaignId: campaign._id.toString(),
           recipientId: contact._id.toString(),
+          type: 'MARKETING',         // 👈 BỔ SUNG: Phân loại job tiếp thị
+          createdAt: Date.now(),      // 👈 BỔ SUNG: Timestamp gốc để Aging Scanner & SLA đo đạc
           slaSeconds: tierConfig.slaSeconds,
           weightTier: tierConfig.weightTier
         },
@@ -135,7 +135,7 @@ class CampaignService {
     // 4. Đẩy hàng loạt vào BullMQ
     await emailQueue.addBulk(jobs);
 
-    // 5. Cập nhật Quota tiêu thụ của Workspace
+    // 5. Cập nhật Quota tiêu thụ
     await Tenant.findByIdAndUpdate(tenantId, {
       $inc: { 'usage.emailsSentThisMonth': recipients.length }
     });

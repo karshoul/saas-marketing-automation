@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../api/axios';
 import { 
@@ -28,8 +28,12 @@ export default function Contacts() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // REF DÙNG CHO CHỌN FILE EXCEL TỪ MÁY TÍNH
+  const fileInputRef = useRef(null);
 
   // --- FORM TẠO MỚI HỒ SƠ KHÁCH HÀNG CRM ĐẦY ĐỦ ---
   const [formData, setFormData] = useState({
@@ -125,7 +129,64 @@ export default function Contacts() {
   }, [contacts]);
 
   // ==========================================
-  // 3. THAO TÁC THÊM MỚI, IMPORT & XÓA
+  // 3. THAO TÁC EXPORT / IMPORT FILE EXCEL
+  // ==========================================
+  const handleExportExcel = async () => {
+    setExporting(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const response = await api.get('/contacts/export', {
+        responseType: 'blob' // Bắt buộc nhận binary file stream từ Backend
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Danh_Ba_VERDIO_${Date.now()}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      setSuccessMsg('Đã xuất thành công file Excel danh bạ!');
+    } catch (err) {
+      console.error('Lỗi xuất Excel:', err);
+      setErrorMsg('Không thể xuất file Excel danh bạ.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportExcelFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSubmitting(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    const formDataUpload = new FormData();
+    formDataUpload.append('file', file);
+
+    try {
+      const res = await api.post('/contacts/import-excel', formDataUpload, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      setSuccessMsg(res.data?.message || 'Import thành công danh bạ từ file Excel!');
+      fetchContacts(1);
+    } catch (err) {
+      console.error('Lỗi import Excel:', err);
+      setErrorMsg(err.response?.data?.message || 'Lỗi khi tải file Excel lên.');
+    } finally {
+      setSubmitting(false);
+      if (e.target) e.target.value = ''; // Reset input file
+    }
+  };
+
+  // ==========================================
+  // 4. THAO TÁC THÊM MỚI, IMPORT TEXT & XÓA
   // ==========================================
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -162,14 +223,13 @@ export default function Contacts() {
     }
   };
 
-  const handleImport = async (e) => {
+  const handleImportText = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     setErrorMsg('');
     setSuccessMsg('');
 
     try {
-      // Định dạng: email, firstName, lastName, phone, company, tags(tag1|tag2)
       const lines = rawImportText.split('\n').map(l => l.trim()).filter(Boolean);
       const contactsList = lines.map(line => {
         const p = line.split(',').map(s => s.trim());
@@ -219,6 +279,15 @@ export default function Contacts() {
   return (
     <div className="w-full space-y-6 font-sans select-none text-slate-300 relative">
       
+      {/* INPUT FILE ẨN CHỌN FILE EXCEL */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        accept=".xlsx, .xls, .csv" 
+        onChange={handleImportExcelFile} 
+        className="hidden" 
+      />
+
       {/* THÔNG BÁO TRẠNG THÁI */}
       {errorMsg && (
         <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center justify-between">
@@ -309,7 +378,7 @@ export default function Contacts() {
             <ul className="space-y-2 font-mono text-[10px] text-slate-400">
               <li className="flex items-start gap-1.5"><span className="text-[#3CE87A] font-bold">✓</span> Ràng buộc cô lập dữ liệu theo Tenant ID.</li>
               <li className="flex items-start gap-1.5"><span className="text-[#00D98B] font-bold">✦</span> Hệ thống tự đồng bộ hạn mức Contact Quota theo gói cước.</li>
-              <li className="flex items-start gap-1.5"><span className="text-[#38bdf8] font-bold">i</span> Hỗ trợ Bulk Upsert CSV chống trùng lặp email.</li>
+              <li className="flex items-start gap-1.5"><span className="text-[#38bdf8] font-bold">i</span> Hỗ trợ Bulk Import file Excel/CSV chống trùng lặp.</li>
             </ul>
           </div>
         </div>
@@ -362,13 +431,38 @@ export default function Contacts() {
             </button>
           </div>
 
-          <div className="flex items-center gap-2.5 self-start lg:self-center">
+          <div className="flex items-center gap-2 flex-wrap self-start lg:self-center">
+            {/* NÚT EXPORT EXCEL */}
+            <button 
+              onClick={handleExportExcel}
+              disabled={exporting}
+              className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-400 hover:text-emerald-300 text-[10px] font-bold uppercase px-3 py-2 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+              title="Tải file Excel danh bạ về máy"
+            >
+              <Download className="w-3.5 h-3.5" />
+              {exporting ? 'Đang xuất Excel...' : 'Tải Excel'}
+            </button>
+
+            {/* NÚT UPLOAD FILE EXCEL */}
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              disabled={submitting}
+              className="flex items-center gap-1.5 bg-sky-500/10 border border-sky-500/20 hover:border-sky-500/40 text-sky-400 hover:text-sky-300 text-[10px] font-bold uppercase px-3 py-2 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+              title="Upload file Excel từ máy tính"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              {submitting ? 'Đang nạp file...' : 'Upload Excel'}
+            </button>
+
+            {/* NÚT IMPORT DÁN TEXT */}
             <button 
               onClick={() => setIsImportOpen(true)}
               className="flex items-center gap-1 bg-white/[0.01] border border-white/[0.04] hover:border-white/[0.1] text-slate-300 hover:text-white text-[10px] font-bold uppercase px-3 py-2 rounded-xl transition-all cursor-pointer"
             >
-              <Upload className="w-3 h-3 text-[#38bdf8]" /> Import CSV
+              <Upload className="w-3 h-3 text-[#38bdf8]" /> Import Text
             </button>
+
+            {/* NÚT THÊM THỦ CÔNG */}
             <button 
               onClick={() => setIsCreateOpen(true)}
               className="bg-white text-black text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-md hover:bg-slate-200 transition-all cursor-pointer"
@@ -406,7 +500,7 @@ export default function Contacts() {
               ) : contacts.length === 0 ? (
                 <tr>
                   <td colSpan="8" className="py-12 text-center text-slate-500">
-                    Workspace này chưa có liên hệ nào. Hãy bấm "Add Contact" hoặc "Import CSV".
+                    Workspace này chưa có liên hệ nào. Hãy bấm "Add Contact", "Upload Excel" hoặc "Import Text".
                   </td>
                 </tr>
               ) : (
@@ -688,13 +782,13 @@ export default function Contacts() {
         </div>
       )}
 
-      {/* ========================== MODAL IMPORT HÀNG LOẠT ========================== */}
+      {/* ========================== MODAL IMPORT DÁN TEXT THỦ CÔNG ========================== */}
       {isImportOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
           <div className="w-full max-w-lg bg-[#0b1329] border border-white/15 rounded-2xl p-6 shadow-2xl relative space-y-4">
             <div className="flex justify-between items-center pb-3 border-b border-white/10">
               <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-[#38bdf8]" /> Import Khách Hàng Hàng Loạt
+                <FileSpreadsheet className="w-4 h-4 text-[#38bdf8]" /> Import Khách Hàng Hàng Loạt (Text)
               </h2>
               <button onClick={() => setIsImportOpen(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
@@ -705,7 +799,7 @@ export default function Contacts() {
               <code className="text-[#00D98B] font-mono text-[11px]">email, firstName, lastName, phone, company, tag1|tag2</code>
             </p>
 
-            <form onSubmit={handleImport} className="space-y-4">
+            <form onSubmit={handleImportText} className="space-y-4">
               <textarea
                 rows="6"
                 required
