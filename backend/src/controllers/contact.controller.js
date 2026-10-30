@@ -67,28 +67,31 @@ class ContactController {
     try {
       const tenantId = req.user.tenantId;
 
-      // Lấy tất cả danh bạ của Tenant hiện tại
+      // Lấy tất cả danh bạ của Tenant
       const contacts = await Contact.find({ tenantId }).lean();
 
-      // Định dạng dữ liệu các cột trong bảng Excel
-      const dataToExport = contacts.map((c, index) => ({
-        'STT': index + 1,
-        'Họ và Tên': c.fullName || c.name || '',
-        'Email': c.email || '',
-        'Số điện thoại': c.phone || '',
-        'Thẻ nhãn': Array.isArray(c.tags) ? c.tags.join(', ') : (c.tags || ''),
-        'Trạng thái': c.status || 'Active',
-        'Ngày tạo': c.createdAt ? new Date(c.createdAt).toLocaleDateString('vi-VN') : ''
-      }));
+      // Định dạng dữ liệu xuất file
+      const dataToExport = contacts.map((c, index) => {
+        // Ghép firstName và lastName thành Họ và Tên
+        const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.fullName || c.name || '';
 
-      // Tạo workbook Excel bằng XLSX
+        return {
+          'STT': index + 1,
+          'Họ và Tên': fullName, // 👈 Đã sửa ghép firstName + lastName
+          'Email': c.email || '',
+          'Số điện thoại': c.phone || '',
+          'Thẻ nhãn': Array.isArray(c.tags) ? c.tags.join(', ') : (c.tags || ''),
+          'Trạng thái': c.status || 'Active',
+          'Ngày tạo': c.createdAt ? new Date(c.createdAt).toLocaleDateString('vi-VN') : ''
+        };
+      });
+
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Danh_Ba_Khach_Hang');
 
       const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-      // Set header trả về file tải về cho trình duyệt
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename=Danh_Ba_VERDIO_${Date.now()}.xlsx`);
 
