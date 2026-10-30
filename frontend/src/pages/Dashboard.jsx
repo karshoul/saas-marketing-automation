@@ -16,7 +16,6 @@ import {
   BarChart3,
   Layers,
   Sparkles,
-  MousePointerClick
 } from "lucide-react";
 
 export default function Dashboard() {
